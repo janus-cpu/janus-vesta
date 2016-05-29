@@ -134,7 +134,8 @@ impl Instructor for Cpu {
         match inst.op {
             Operation::NOP => { },
             Operation::ADD => {
-                let C = A + B;
+                let C = A.wrapping_add(B);
+                debug!("Add {} + {} got {}", A, B, C);
                 let lo = (A & 0xFFFF) + (B & 0xFFFF);
                 let hi = (lo >> 16) + (A >> 16) + (B >> 16);
                 self.set_carry_flag(hi & 0x10000);
@@ -147,7 +148,7 @@ impl Instructor for Cpu {
             },
             Operation::ADC => {
                 let carryin = if self.get_carry_flag() { 1 } else { 0 };
-                let C = A + B + carryin;
+                let C = A.wrapping_add(B).wrapping_add(carryin);
                 let lo = (A & 0xFFFF) + (B & 0xFFFF) + carryin;
                 let hi = (lo >> 16) + (A >> 16) + (B >> 16);
                 self.set_carry_flag(hi & 0x10000);
@@ -159,7 +160,7 @@ impl Instructor for Cpu {
                 self.store_op_long(inst.op2, C);
             },
             Operation::SUB => {
-                let C = B - A;
+                let C = B.wrapping_sub(A);
 
                 self.set_zero_flag(C == 0);
                 self.set_neg_flag(C & 0x80000000);
@@ -171,7 +172,7 @@ impl Instructor for Cpu {
             },
             Operation::SBB => {
                 let carryin = if self.get_carry_flag() { 1 } else { 0 };
-                let C = B - A - carryin;
+                let C = B.wrapping_sub(A).wrapping_sub(carryin);
 
                 self.set_zero_flag(C == 0);
                 self.set_neg_flag(C & 0x80000000);
@@ -182,7 +183,8 @@ impl Instructor for Cpu {
                 self.store_op_long(inst.op2, C);
             },
             Operation::CMP1 | Operation::CMP2 => {
-                let C = B - A;
+                let C = B.wrapping_sub(A);
+                debug!("Comparing {} - {}, got {}", B, A, C);
 
                 self.set_zero_flag(C == 0);
                 self.set_neg_flag(C & 0x80000000);
@@ -200,7 +202,7 @@ impl Instructor for Cpu {
                 self.set_neg_flag(C & 0x80000000);
             },
             Operation::DEC => {
-                let C = B - 1;
+                let C = B.wrapping_sub(1);
 
                 self.set_zero_flag(C == 0);
                 self.set_neg_flag(C & 0x80000000);
@@ -211,7 +213,7 @@ impl Instructor for Cpu {
                 self.store_op_long(inst.op1, C);
             },
             Operation::INC => {
-                let C = A + 1;
+                let C = A.wrapping_add(1);
                 let lo = (A & 0xFFFF) + 1;
                 let hi = (lo >> 16) + (A >> 16);
                 self.set_carry_flag(hi & 0x10000);
@@ -223,7 +225,7 @@ impl Instructor for Cpu {
                 self.store_op_long(inst.op1, C);
             },
             Operation::NEG => {
-                let C = 0 - A;
+                let C = (0 as u32).wrapping_sub(A);
 
                 self.set_zero_flag(C == 0);
                 self.set_neg_flag(C & 0x80000000);
@@ -322,9 +324,11 @@ impl Instructor for Cpu {
                 }
             },
             Operation::CALL => {
+                // decrement stack
+                let mut stack = self.registers.gp[14];
+                stack = stack.wrapping_sub(4);
+                self.registers.gp[14] = stack;
                 // Push old rr
-                self.registers.gp[14] -= 4;
-                let stack = self.registers.gp[14];
                 let oldrr = self.registers.rr;
                 self.store_mem_long(stack, oldrr);
                 // move pc into new rr
@@ -339,7 +343,10 @@ impl Instructor for Cpu {
                 let stack = self.registers.gp[14];
                 let val = self.retrieve_mem_long(stack);
                 self.registers.rr = val;
-                self.registers.gp[14] += 4;
+                // increment stack
+                let mut stack = self.registers.gp[14];
+                stack = stack.wrapping_add(4);
+                self.registers.gp[14] = stack;
             },
             Operation::HLT => {
                 self.fault(Fault::FAULT_HALT);
@@ -375,15 +382,17 @@ impl Instructor for Cpu {
                 self.store_op_long(inst.op2, A);
             },
             Operation::PUSH => {
-                self.registers.gp[14] -= 4;
-                let stack = self.registers.gp[14];
+                let mut stack = self.registers.gp[14];
+                stack = stack.wrapping_sub(4);
+                self.registers.gp[14] = stack;
                 self.store_mem_long(stack, A);
             },
             Operation::POP => {
-                let stack = self.registers.gp[14];
+                let mut stack = self.registers.gp[14];
                 let val = self.retrieve_mem_long(stack);
                 self.store_op_long(inst.op1, val);
-                self.registers.gp[14] += 4;
+                stack = stack.wrapping_add(4);
+                self.registers.gp[14] = stack;
             },
             Operation::IN => {
 

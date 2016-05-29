@@ -14,7 +14,8 @@ macro_rules! println_stderr (
 macro_rules! debug (
     ($($arg:tt)*) => { {
         unsafe {
-            if debug {
+            use die;
+            if die::debug {
                 use std::io::Write;
                 let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
                 r.expect("failed printing to stderr");

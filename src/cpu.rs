@@ -70,7 +70,7 @@ impl Cpu {
         inst_bytes >>= 7;
         let op2 = inst_bytes & 0b1111111;
 
-        debug!("opcode: {}, size: {}, type: {}, {}, op: {}, {}",
+        debug!("opcode: 0x{:X}, size: {}, type: {}, {}, op: {}, {}",
                opcode, size, type1, type2, op1, op2);
 
         let inst = Instruction::decode(opcode, size, type1, type2, op1, op2);
@@ -79,6 +79,7 @@ impl Cpu {
             debug!("{}", i);
         } else if let Err(_) = inst {
             debug!("Error decoding instruction...");
+            panic!("OH NO!");
         }
 
         return inst.unwrap_or_else(|_| {
@@ -216,18 +217,18 @@ impl Cpu {
             Operand::RegOff(r, o) => {
                 let regvalue = self.retrieve_reg_long(r);
                 let regoff = match o {
-                    0 => regvalue + 0,
-                    1 => regvalue + 1,
-                    2 => regvalue + 2,
-                    3 => regvalue + 3,
-                    4 => regvalue - 3,
-                    5 => regvalue - 2,
-                    6 => regvalue - 1,
+                    0 => regvalue,
+                    1 => regvalue.wrapping_add(1),
+                    2 => regvalue.wrapping_add(2),
+                    3 => regvalue.wrapping_add(3),
+                    4 => regvalue.wrapping_sub(3),
+                    5 => regvalue.wrapping_sub(2),
+                    6 => regvalue.wrapping_sub(1),
                     7 => {
                         let pc = self.pc;
                         let off_bits = self.retrieve_mem_long(pc);
                         self.pc += 4;
-                        regvalue + off_bits
+                        regvalue.wrapping_add(off_bits)
                     },
                     _ => { panic!("Illegal offset passed!"); }
                 };
@@ -256,18 +257,18 @@ impl Cpu {
             Operand::RegOff(r, o) => {
                 let regvalue = self.retrieve_reg_long(r);
                 let regoff = match o {
-                    0 => regvalue + 0,
-                    1 => regvalue + 4,
-                    2 => regvalue + 8,
-                    3 => regvalue + 12,
-                    4 => regvalue - 12,
-                    5 => regvalue - 8,
-                    6 => regvalue - 4,
+                    0 => regvalue,
+                    1 => regvalue.wrapping_add(4),
+                    2 => regvalue.wrapping_add(8),
+                    3 => regvalue.wrapping_add(12),
+                    4 => regvalue.wrapping_sub(12),
+                    5 => regvalue.wrapping_sub(8),
+                    6 => regvalue.wrapping_sub(4),
                     7 => {
                         let pc = self.pc;
                         let off_bits = self.retrieve_mem_long(pc);
                         self.pc += 4;
-                        regvalue + off_bits
+                        regvalue.wrapping_add(off_bits)
                     },
                     _ => { unreachable!(); }
                 };
@@ -330,18 +331,18 @@ impl Cpu {
             Operand::RegOff(r, o) => {
                 let regvalue = self.retrieve_reg_long(r);
                 let regoff = match o {
-                    0 => regvalue + 0,
-                    1 => regvalue + 1,
-                    2 => regvalue + 2,
-                    3 => regvalue + 3,
-                    4 => regvalue - 3,
-                    5 => regvalue - 2,
-                    6 => regvalue - 1,
+                    0 => regvalue,
+                    1 => regvalue.wrapping_add(1),
+                    2 => regvalue.wrapping_add(2),
+                    3 => regvalue.wrapping_add(3),
+                    4 => regvalue.wrapping_sub(3),
+                    5 => regvalue.wrapping_sub(2),
+                    6 => regvalue.wrapping_sub(1),
                     7 => {
                         let pc = self.pc;
                         let off_bits = self.retrieve_mem_long(pc);
                         self.pc += 4;
-                        regvalue + off_bits
+                        regvalue.wrapping_add(off_bits)
                     },
                     _ => { panic!("Illegal offset passed!"); }
                 };
@@ -365,18 +366,18 @@ impl Cpu {
             Operand::RegOff(r, o) => {
                 let regvalue = self.retrieve_reg_long(r);
                 let regoff = match o {
-                    0 => regvalue + 0,
-                    1 => regvalue + 1,
-                    2 => regvalue + 2,
-                    3 => regvalue + 3,
-                    4 => regvalue - 3,
-                    5 => regvalue - 2,
-                    6 => regvalue - 1,
+                    0 => regvalue,
+                    1 => regvalue.wrapping_add(4),
+                    2 => regvalue.wrapping_add(8),
+                    3 => regvalue.wrapping_add(12),
+                    4 => regvalue.wrapping_sub(12),
+                    5 => regvalue.wrapping_sub(8),
+                    6 => regvalue.wrapping_sub(4),
                     7 => {
                         let pc = self.pc;
                         let off_bits = self.retrieve_mem_long(pc);
                         self.pc += 4;
-                        regvalue + off_bits
+                        regvalue.wrapping_add(off_bits)
                     },
                     _ => { panic!("Illegal offset passed!"); }
                 };
