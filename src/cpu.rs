@@ -5,7 +5,6 @@ use instruction::Instruction;
 use instruction::Operand;
 use execute::Instructor;
 use die::*;
-
 // ------------------------------------------------------------------- //
 
 pub struct Cpu {
@@ -39,7 +38,7 @@ impl Cpu {
             let pc = self.pc;
             let inst_bytes = self.retrieve_mem_long(pc); //TODO: paging!
 
-            //TODO: check for fault in retrieving instruction
+            //TODO: self.handle_fault(pc);
 
             let instruction = self.decode(inst_bytes);
 
@@ -50,7 +49,6 @@ impl Cpu {
             self.instruct(instruction);
 
             //TODO: Check for faults, handle faults.
-            //Possibly save old PC for fault?
         }
     }
 
@@ -67,7 +65,7 @@ impl Cpu {
         inst_bytes >>= 7;
         let op2 = inst_bytes & 0b1111111;
 
-        println!("opcode: {}, size: {}, type: {}, {}, op: {}, {}",
+        debug!("opcode: {}, size: {}, type: {}, {}, op: {}, {}",
                opcode, size, type1, type2, op1, op2);
 
         let inst = Instruction::decode(opcode, size, type1, type2, op1, op2);

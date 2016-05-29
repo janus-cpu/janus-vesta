@@ -3,8 +3,10 @@ use getopts::Options;
 use std::env;
 use std::process::exit;
 
-pub mod cpu;
+#[macro_use]
 pub mod die;
+
+pub mod cpu;
 pub mod mem;
 pub mod instruction;
 pub mod execute;
@@ -24,8 +26,7 @@ fn main() {
     let mut opts = Options::new();
     opts.optflag("h", "help", "Print this help menu");
     opts.optopt("M", "memsize", "Memory size (in bytes) for the CPU to use as RAM", "SIZE");
-    opts.optflag("v", "verbose", "Print verbose output");
-    opts.optflag("", "debug", "Print extremely verbose debug output");
+    opts.optflag("D", "debug", "Print extremely verbose debug output");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => { m }
@@ -36,12 +37,9 @@ fn main() {
         print_usage(opts);
     }
 
-    if matches.opt_present("v") {
-        //TODO: set output mode to verbose
-    }
-
-    if matches.opt_present("debug") {
-        //TODO: set output mode to debug
+    if matches.opt_present("D") {
+        unsafe { die::debug = true; }
+        debug!("Debugging enabled!");
     }
 
     //TODO: put this default somewhere nice.

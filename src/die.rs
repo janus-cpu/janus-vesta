@@ -1,10 +1,25 @@
 use std::process::exit;
 use std::io::Write;
 
-macro_rules! println_stderr(
+pub static mut debug: bool = false;
+
+macro_rules! println_stderr (
     ($($arg:tt)*) => { {
         let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
         r.expect("failed printing to stderr");
+    } }
+);
+
+#[macro_export]
+macro_rules! debug (
+    ($($arg:tt)*) => { {
+        unsafe {
+            if debug {
+                use std::io::Write;
+                let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
+                r.expect("failed printing to stderr");
+            }
+        }
     } }
 );
 

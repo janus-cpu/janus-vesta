@@ -15,7 +15,7 @@ impl Instruction {
         let size = match sizei {
             0 => Size::Long,
             1 => Size::Short,
-            _ => { return Err(()) }
+            _ => { unreachable!() }
         };
 
         let op1 = try!(Operand::typecheck1(operation, type1, op1i, size));
@@ -335,7 +335,7 @@ impl Operand {
         } else if typeint == 3 {
             Operand::Const
         } else {
-            panic!("Problem here...");
+            unreachable!();
         }
     }
 }
