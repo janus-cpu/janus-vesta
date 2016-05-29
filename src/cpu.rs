@@ -36,6 +36,9 @@ impl Cpu {
     pub fn execute(&mut self) {
         loop {
             let pc = self.pc;
+
+            debug!("Instruction at: {}", pc);
+
             let inst_bytes = self.retrieve_mem_long(pc); //TODO: paging!
 
             //TODO: self.handle_fault(pc);
@@ -47,6 +50,9 @@ impl Cpu {
             self.pc += 4; // Read 4 bytes.
 
             self.instruct(instruction);
+
+            debug!("Registers after debugging: {}", self.registers);
+            debug!("\n");
 
             //TODO: Check for faults, handle faults.
         }
@@ -69,6 +75,12 @@ impl Cpu {
                opcode, size, type1, type2, op1, op2);
 
         let inst = Instruction::decode(opcode, size, type1, type2, op1, op2);
+
+        if let Ok(i) = inst {
+            debug!("{}", i);
+        } else if let Err(_) = inst {
+            debug!("Error decoding instruction...");
+        }
 
         return inst.unwrap_or_else(|_| {
                 self.fault(Fault::FAULT_ILLEGAL_INSTRUCTION);
@@ -258,7 +270,7 @@ impl Cpu {
                         self.pc += 4;
                         regvalue + off_bits
                     },
-                    _ => { panic!("Illegal offset passed!"); }
+                    _ => { unreachable!(); }
                 };
 
                 self.retrieve_mem_long(regoff)
@@ -308,7 +320,7 @@ impl Cpu {
 
     pub fn store_op_short(&mut self, op: Operand, i: u8) {
         match op {
-            Operand::None => { panic!("Cannot store into none") },
+            Operand::None => { unreachable!(); },
             Operand::Reg(r) => {
                 self.store_reg_short(r, i)
             },

@@ -10,6 +10,7 @@ pub mod cpu;
 pub mod mem;
 pub mod instruction;
 pub mod execute;
+pub mod formatting;
 
 use cpu::Cpu;
 use die::*;
