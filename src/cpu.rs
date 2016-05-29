@@ -51,8 +51,7 @@ impl Cpu {
 
             self.instruct(instruction);
 
-            debug!("Registers after debugging: {}", self.registers);
-            debug!("\n");
+            debug!("Registers after inst: {}", self.registers);
 
             //TODO: Check for faults, handle faults.
         }

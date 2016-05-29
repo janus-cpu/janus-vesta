@@ -4,6 +4,7 @@ use instruction::Operation;
 use cpu::Cpu;
 use cpu::Fault;
 use cpu::FlagOperations;
+use die::die;
 
 pub trait Instructor {
     fn instruct(&mut self, instruction: Instruction);
@@ -160,26 +161,37 @@ impl Instructor for Cpu {
             Operation::SUB => {
                 let C = B - A;
 
+                self.set_zero_flag(C == 0);
+                self.set_neg_flag(C & 0x80000000);
+
+                let borrowchain = (C & ((!B) | A)) | ((!B) & A);
+                self.set_carry_flag(borrowchain & 0x80000000);
+                self.set_ovf_flag(XOR2(borrowchain >> 30));
                 self.store_op_long(inst.op2, C);
             },
             Operation::SBB => {
+                let carryin = if self.get_carry_flag() { 1 } else { 0 };
+                let C = B - A - carryin;
 
-            },
-            Operation::CMP1 => {
-
-            },
-            Operation::CMP2 => {
-
-            },
-            Operation::TEST1 => {
-                let C = A & B;
-
-                self.set_carry_flag(false); // clear
-                self.set_ovf_flag(false);   // clear
                 self.set_zero_flag(C == 0);
                 self.set_neg_flag(C & 0x80000000);
+
+                let borrowchain = (C & ((!B) | A)) | ((!B) & A);
+                self.set_carry_flag(borrowchain & 0x80000000);
+                self.set_ovf_flag(XOR2(borrowchain >> 30));
+                self.store_op_long(inst.op2, C);
             },
-            Operation::TEST2 => {
+            Operation::CMP1 | Operation::CMP2 => {
+                let C = B - A;
+
+                self.set_zero_flag(C == 0);
+                self.set_neg_flag(C & 0x80000000);
+
+                let borrowchain = (C & ((!B) | A)) | ((!B) & A);
+                self.set_carry_flag(borrowchain & 0x80000000);
+                self.set_ovf_flag(XOR2(borrowchain >> 30));
+            },
+            Operation::TEST1 | Operation::TEST2 => {
                 let C = A & B;
 
                 self.set_carry_flag(false); // clear
@@ -188,7 +200,15 @@ impl Instructor for Cpu {
                 self.set_neg_flag(C & 0x80000000);
             },
             Operation::DEC => {
+                let C = B - 1;
 
+                self.set_zero_flag(C == 0);
+                self.set_neg_flag(C & 0x80000000);
+
+                let borrowchain = (C & ((!B) | 1)) | ((!B) & 1);
+                self.set_carry_flag(borrowchain & 0x80000000);
+                self.set_ovf_flag(XOR2(borrowchain >> 30));
+                self.store_op_long(inst.op1, C);
             },
             Operation::INC => {
                 let C = A + 1;
@@ -203,7 +223,14 @@ impl Instructor for Cpu {
                 self.store_op_long(inst.op1, C);
             },
             Operation::NEG => {
+                let C = 0 - A;
 
+                self.set_zero_flag(C == 0);
+                self.set_neg_flag(C & 0x80000000);
+
+                self.set_carry_flag(false);
+                self.set_ovf_flag(false); //is no overflow a shortcoming? TODO
+                self.store_op_long(inst.op1, C);
             },
             Operation::NOT => {
                 self.set_carry_flag(false); // clear
@@ -316,6 +343,7 @@ impl Instructor for Cpu {
             },
             Operation::HLT => {
                 self.fault(Fault::FAULT_HALT);
+                die("Halted!");
             },
             Operation::ROM => {
                 let val = self.registers.rm;

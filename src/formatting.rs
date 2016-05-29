@@ -97,30 +97,41 @@ impl Display for Registers {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         try!(write!(f, "\n"));
 
-        for i in 0..15 {
-            try!(write!(f, "r{}: {}, ", i, self.gp[i]));
-            if i % 4 == 0 && i != 0 {
-                try!(write!(f, "\n"));
+        try!(write!(f, "GP: ["));
+        for i in 0..16 {
+            try!(write!(f, "{}", self.gp[i]));
+            if i == 15 {
+                try!(write!(f, "]\n"));
+            } else {
+                try!(write!(f, ", "));
             }
         }
 
-        try!(write!(f, "rr: {}", self.rr));
+        try!(write!(f, "RR: 0x{:X}\n", self.rr));
 
-        for i in 0..6 {
-            try!(write!(f, "re{}: {}, ", i, self.re[i]));
-            if i % 4 == 0 && i != 0 {
-                try!(write!(f, "\n"));
-            }
-        }
-
+        try!(write!(f, "RE: ["));
         for i in 0..7 {
-            try!(write!(f, "rk{}: {}, ", i, self.gp[i]));
-            if i % 4 == 0 && i != 0 {
-                try!(write!(f, "\n"));
+            try!(write!(f, "{}", self.re[i]));
+            if i == 6 {
+                try!(write!(f, "]\n"));
+            } else {
+                try!(write!(f, ", "));
             }
         }
 
-        try!(write!(f, "rm: {}", self.rm));
-        write!(f, "ri: {}", self.ri)
+        try!(write!(f, "RK: ["));
+        for i in 0..8 {
+            try!(write!(f, "{}", self.rk[i]));
+            if i == 7 {
+                try!(write!(f, "]\n"));
+            } else {
+                try!(write!(f, ", "));
+            }
+        }
+
+        try!(write!(f, "RM: 0x{:X}\n", self.rm));
+        try!(write!(f, "RI: 0x{:X}\n", self.ri));
+
+        Ok(())
     }
 }
