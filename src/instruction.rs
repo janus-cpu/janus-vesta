@@ -330,7 +330,7 @@ impl Operand {
             Operand::RegDeref(reg)
         } else if typeint == 2 {
             let reg = operand & 0b1111;
-            let off = (operand >> 3) & 0b111;
+            let off = (operand >> 4) & 0b111;
             Operand::RegOff(reg, off)
         } else if typeint == 3 {
             Operand::Const

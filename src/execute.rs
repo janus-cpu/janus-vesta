@@ -399,7 +399,7 @@ impl Instructor for Cpu {
             },
             Operation::OUT => {
                 //TODO: do this actually...
-                println!("Printed {} (0x{:X}) to CPU out {}", B, B, A);
+                println!("Printed {} ({}) to CPU out {}", B, B as u8 as char, A);
             },
             Operation::XCHG => {
                 self.store_op_long(inst.op2, A);

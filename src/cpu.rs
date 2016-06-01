@@ -273,6 +273,7 @@ impl Cpu {
                     _ => { unreachable!(); }
                 };
 
+                debug!("Regoff is {}", regoff);
                 self.retrieve_mem_long(regoff)
             },
             Operand::Const => {
