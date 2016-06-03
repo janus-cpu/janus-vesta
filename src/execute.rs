@@ -22,8 +22,8 @@ impl Instructor for Cpu {
 
     #[allow(non_snake_case)]
     fn instruct_short(&mut self, inst: Instruction) {
-        //let A = self.retrieve_op_short(inst.op1) as u32;
-        //let B = self.retrieve_op_short(inst.op2) as u32;
+        let A = self.retrieve_op_short(inst.op1) as u32;
+        let B = self.retrieve_op_short(inst.op2) as u32;
 
         match inst.op {
             Operation::NOP => { },
@@ -61,65 +61,119 @@ impl Instructor for Cpu {
 
             },
             Operation::NOT => {
+                let C = !A;
 
+                self.set_carry_flag(false);
+                self.set_ovf_flag(false);
+                self.set_zero_flag((C & 0xFF) == 0);
+                self.set_neg_flag(C & 0x80);
+                self.store_op_short(inst.op1, (C & 0xFF) as u8);
             },
             Operation::AND => {
+                let C = A & B;
 
+                self.set_carry_flag(false);
+                self.set_ovf_flag(false);
+                self.set_zero_flag((C & 0xFF) == 0);
+                self.set_neg_flag(C & 0x80);
+                self.store_op_short(inst.op2, (C & 0xFF) as u8);
             },
             Operation::OR => {
+                let C = A & B;
 
+                self.set_carry_flag(false);
+                self.set_ovf_flag(false);
+                self.set_zero_flag((C & 0xFF) == 0);
+                self.set_neg_flag(C & 0x80);
+                self.store_op_short(inst.op2, (C & 0xFF) as u8);
             },
             Operation::XOR => {
+                let C = A ^ B;
 
+                self.set_carry_flag(false);
+                self.set_ovf_flag(false);
+                self.set_zero_flag((C & 0xFF) == 0);
+                self.set_neg_flag(C & 0x80);
+                self.store_op_short(inst.op2, (C & 0xFF) as u8);
             },
             Operation::MOV => {
-
+                self.store_op_short(inst.op2, A as u8);
             },
             Operation::POP => {
-
+                let mut stack = self.registers.gp[15];
+                let val = self.retrieve_mem_short(stack);
+                self.store_op_short(inst.op1, val);
+                stack = stack.wrapping_add(4);
+                self.registers.gp[15] = stack;
             },
             Operation::PUSH => {
-
+                let mut stack = self.registers.gp[15];
+                stack = stack.wrapping_sub(1);
+                self.registers.gp[15] = stack;
+                self.store_mem_short(stack, A as u8);
             },
             Operation::IN => {
 
             },
             Operation::OUT => {
-
+                println!("Printed {} ({}) to CPU out {}", B, B as u8 as char, A);
             },
             Operation::XCHG => {
-
+                self.store_op_short(inst.op1, B as u8);
+                self.store_op_short(inst.op2, A as u8);
             },
             Operation::MOVE => {
-
+                if self.get_zero_flag() {
+                    self.store_op_short(inst.op2, A as u8);
+                }
             },
             Operation::MOVNE => {
-
+                if !self.get_zero_flag() {
+                    self.store_op_short(inst.op2, A as u8);
+                }
             },
             Operation::MOVL => {
-
+                if self.get_neg_flag() != self.get_ovf_flag() {
+                    self.store_op_short(inst.op2, A as u8);
+                }
             },
             Operation::MOVLE => {
-
+                if self.get_neg_flag() != self.get_ovf_flag()
+                   || self.get_zero_flag() {
+                    self.store_op_short(inst.op2, A as u8);
+                }
             },
             Operation::MOVG => {
-
+                if self.get_neg_flag() == self.get_ovf_flag()
+                   && self.get_zero_flag() {
+                    self.store_op_short(inst.op2, A as u8);
+                }
             },
             Operation::MOVGE => {
-
+                if self.get_neg_flag() == self.get_ovf_flag() {
+                    self.store_op_short(inst.op2, A as u8);
+                }
             },
             Operation::MOVLU => {
-
+                if self.get_carry_flag() {
+                    self.store_op_short(inst.op2, A as u8);
+                }
             },
             Operation::MOVLEU => {
-
+                if self.get_carry_flag() || self.get_zero_flag() {
+                    self.store_op_short(inst.op2, A as u8);
+                }
             },
             Operation::MOVGU => {
-
+                if !self.get_carry_flag() && !self.get_zero_flag() {
+                    self.store_op_short(inst.op2, A as u8);
+                }
             },
             Operation::MOVGEU => {
-
-            },
+                if !self.get_carry_flag() {
+                    self.store_op_short(inst.op2, A as u8);
+                }
+            }
             _ => {
                 self.fault(Fault::FAULT_ILLEGAL_INSTRUCTION);
             }
