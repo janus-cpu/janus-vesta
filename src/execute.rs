@@ -325,9 +325,9 @@ impl Instructor for Cpu {
             },
             Operation::CALL => {
                 // decrement stack
-                let mut stack = self.registers.gp[14];
+                let mut stack = self.registers.gp[15];
                 stack = stack.wrapping_sub(4);
-                self.registers.gp[14] = stack;
+                self.registers.gp[15] = stack;
                 // Push old rr
                 let oldrr = self.registers.rr;
                 self.store_mem_long(stack, oldrr);
@@ -340,13 +340,13 @@ impl Instructor for Cpu {
                 // jump to rr
                 self.pc = self.registers.rr;
                 // pop old rr
-                let stack = self.registers.gp[14];
+                let stack = self.registers.gp[15];
                 let val = self.retrieve_mem_long(stack);
                 self.registers.rr = val;
                 // increment stack
-                let mut stack = self.registers.gp[14];
+                let mut stack = self.registers.gp[15];
                 stack = stack.wrapping_add(4);
-                self.registers.gp[14] = stack;
+                self.registers.gp[15] = stack;
             },
             Operation::HLT => {
                 self.fault(Fault::FAULT_HALT);
@@ -382,17 +382,17 @@ impl Instructor for Cpu {
                 self.store_op_long(inst.op2, A);
             },
             Operation::PUSH => {
-                let mut stack = self.registers.gp[14];
+                let mut stack = self.registers.gp[15];
                 stack = stack.wrapping_sub(4);
-                self.registers.gp[14] = stack;
+                self.registers.gp[15] = stack;
                 self.store_mem_long(stack, A);
             },
             Operation::POP => {
-                let mut stack = self.registers.gp[14];
+                let mut stack = self.registers.gp[15];
                 let val = self.retrieve_mem_long(stack);
                 self.store_op_long(inst.op1, val);
                 stack = stack.wrapping_add(4);
-                self.registers.gp[14] = stack;
+                self.registers.gp[15] = stack;
             },
             Operation::IN => {
 
