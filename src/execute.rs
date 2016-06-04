@@ -28,37 +28,101 @@ impl Instructor for Cpu {
         match inst.op {
             Operation::NOP => { },
             Operation::ADD => {
+                let C = A + B;
 
+                self.set_carry_flag(C & 0x100);
+                self.set_zero_flag(C == 0);
+                self.set_neg_flag(C & 0x80);
+
+                let carrychain = (A & B) | ((!C) & (A | B));
+                self.set_ovf_flag(XOR2(carrychain >> 6));
+                self.store_op_short(inst.op2, C as u8);
             },
             Operation::ADC => {
+                let carryin = if self.get_carry_flag() { 1 } else { 0 };
+                let C = A + B + carryin;
 
+                self.set_carry_flag(C & 0x100);
+                self.set_zero_flag(C == 0);
+                self.set_neg_flag(C & 0x80);
+
+                let carrychain = (A & B) | ((!C) & (A | B));
+                self.set_ovf_flag(XOR2(carrychain >> 6));
+                self.store_op_short(inst.op2, C as u8);
             },
             Operation::SUB => {
+                let C = B.wrapping_sub(A);
 
+                self.set_zero_flag((C & 0xFF) == 0);
+                self.set_neg_flag(C & 0x80);
+
+                let borrowchain = (C & ((!B) | A)) | ((!B) & A);
+                self.set_carry_flag(borrowchain & 0x80);
+                self.set_ovf_flag(XOR2(borrowchain >> 6));
+                self.store_op_short(inst.op2, C as u8);
             },
             Operation::SBB => {
+                let carryin = if self.get_carry_flag() { 1 } else { 0 };
+                let C = B.wrapping_sub(A).wrapping_sub(carryin);
 
+                self.set_zero_flag((C & 0xFF) == 0);
+                self.set_neg_flag(C & 0x80);
+
+                let borrowchain = (C & ((!B) | A)) | ((!B) & A);
+                self.set_carry_flag(borrowchain & 0x80);
+                self.set_ovf_flag(XOR2(borrowchain >> 6));
+                self.store_op_short(inst.op2, C as u8);
             },
-            Operation::CMP1 => {
+            Operation::CMP1 | Operation::CMP2 => {
+                let C = B.wrapping_sub(A);
 
+                self.set_zero_flag((C & 0xFF) == 0);
+                self.set_neg_flag(C & 0x80);
+
+                let borrowchain = (C & ((!B) | A)) | ((!B) & A);
+                self.set_carry_flag(borrowchain & 0x80);
+                self.set_ovf_flag(XOR2(borrowchain >> 6));
             },
-            Operation::CMP2 => {
+            Operation::TEST1 | Operation::TEST2 => {
+                let C = A & B;
 
-            },
-            Operation::TEST1 => {
-
-            },
-            Operation::TEST2 => {
-
+                self.set_carry_flag(false);
+                self.set_ovf_flag(false);
+                self.set_zero_flag((C & 0xFF) == 0);
+                self.set_neg_flag(C & 0x80);
             },
             Operation::DEC => {
+                let C = A.wrapping_sub(1);
 
+                self.set_zero_flag((C & 0xFF) == 0);
+                self.set_neg_flag(C & 0x80);
+
+                let borrowchain = (C & ((!A) | 1)) | ((!A) & 1);
+                self.set_carry_flag(borrowchain & 0x80);
+                self.set_ovf_flag(XOR2(borrowchain >> 6));
+                self.store_op_short(inst.op1, C as u8);
             },
             Operation::INC => {
+                let C = A + 1;
 
+                self.set_carry_flag(C & 0x100);
+                self.set_zero_flag(C == 0);
+                self.set_neg_flag(C & 0x80);
+
+                let carrychain = (A & 1) | ((!C) & (A | 1));
+                self.set_ovf_flag(XOR2(carrychain >> 6));
+                self.store_op_short(inst.op1, C as u8);
             },
             Operation::NEG => {
+                let C = (0 as u32).wrapping_sub(A);
 
+                self.set_zero_flag((C & 0xFF) == 0);
+                self.set_neg_flag(C & 0x80);
+                self.set_carry_flag(A != 0);
+
+                let borrowchain = C | A;
+                self.set_ovf_flag(XOR2(borrowchain >> 6));
+                self.store_op_short(inst.op1, C as u8);
             },
             Operation::NOT => {
                 let C = !A;
@@ -189,7 +253,6 @@ impl Instructor for Cpu {
             Operation::NOP => { },
             Operation::ADD => {
                 let C = A.wrapping_add(B);
-                debug!("Add {} + {} got {}", A, B, C);
                 let lo = (A & 0xFFFF) + (B & 0xFFFF);
                 let hi = (lo >> 16) + (A >> 16) + (B >> 16);
                 self.set_carry_flag(hi & 0x10000);
@@ -238,7 +301,6 @@ impl Instructor for Cpu {
             },
             Operation::CMP1 | Operation::CMP2 => {
                 let C = B.wrapping_sub(A);
-                debug!("Comparing {} - {}, got {}", B, A, C);
 
                 self.set_zero_flag(C == 0);
                 self.set_neg_flag(C & 0x80000000);
@@ -256,12 +318,12 @@ impl Instructor for Cpu {
                 self.set_neg_flag(C & 0x80000000);
             },
             Operation::DEC => {
-                let C = B.wrapping_sub(1);
+                let C = A.wrapping_sub(1);
 
                 self.set_zero_flag(C == 0);
                 self.set_neg_flag(C & 0x80000000);
 
-                let borrowchain = (C & ((!B) | 1)) | ((!B) & 1);
+                let borrowchain = (C & ((!A) | 1)) | ((!A) & 1);
                 self.set_carry_flag(borrowchain & 0x80000000);
                 self.set_ovf_flag(XOR2(borrowchain >> 30));
                 self.store_op_long(inst.op1, C);
@@ -283,14 +345,16 @@ impl Instructor for Cpu {
 
                 self.set_zero_flag(C == 0);
                 self.set_neg_flag(C & 0x80000000);
+                self.set_carry_flag(C != 0);
 
-                self.set_carry_flag(false);
-                self.set_ovf_flag(false); //is no overflow a shortcoming? TODO
+                let borrowchain = C | A;
+                self.set_ovf_flag(XOR2(borrowchain >> 30));
                 self.store_op_long(inst.op1, C);
             },
             Operation::NOT => {
                 self.set_carry_flag(false); // clear
                 self.set_ovf_flag(false);   // clear
+
                 self.set_zero_flag(A == 0);
                 self.set_neg_flag((!A) & 0x80000000);
                 self.store_op_long(inst.op1, !A);
@@ -300,6 +364,7 @@ impl Instructor for Cpu {
 
                 self.set_carry_flag(false); // clear
                 self.set_ovf_flag(false);   // clear
+
                 self.set_zero_flag(C == 0);
                 self.set_neg_flag(C & 0x80000000);
                 self.store_op_long(inst.op2, C);
@@ -309,6 +374,7 @@ impl Instructor for Cpu {
 
                 self.set_carry_flag(false); // clear
                 self.set_ovf_flag(false);   // clear
+
                 self.set_zero_flag(C == 0);
                 self.set_neg_flag(C & 0x80000000);
                 self.store_op_long(inst.op2, C);
@@ -318,6 +384,7 @@ impl Instructor for Cpu {
 
                 self.set_carry_flag(false); // clear
                 self.set_ovf_flag(false);   // clear
+
                 self.set_zero_flag(C == 0);
                 self.set_neg_flag(C & 0x80000000);
                 self.store_op_long(inst.op2, C);
