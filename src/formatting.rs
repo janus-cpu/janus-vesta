@@ -62,6 +62,8 @@ impl Display for Operation {
              Operation::CALL => "CALL",
              Operation::RET => "RET",
              Operation::HLT => "HLT",
+             Operation::INT => "INT",
+             Operation::IRET => "IRET",
 
              Operation::LOM => "LOM",
              Operation::ROM => "ROM",

@@ -39,7 +39,7 @@ pub enum Operation {
     NOP, ADD, ADC, SUB, SBB, CMP1, CMP2, TEST1, TEST2, DEC, INC,
     //UDIV, UMUL, SDIV, SMUL,
     NEG, NOT, AND, OR, XOR,
-    JMP, JE, JNE, JL, JLE, JG, JGE, JLU, JLEU, JGU, JGEU, CALL, RET, HLT,
+    JMP, JE, JNE, JL, JLE, JG, JGE, JLU, JLEU, JGU, JGEU, CALL, RET, HLT, INT, IRET,
     LOM, ROM, LOI, ROI, ROP, LFL, RFL,
     MOV, POP, PUSH, IN, OUT, XCHG,
     MOVE, MOVNE, MOVL, MOVLE, MOVG, MOVGE, MOVLU, MOVLEU, MOVGU, MOVGEU
@@ -80,9 +80,11 @@ impl Operation {
             0x38 => Operation::JLEU,
             0x39 => Operation::JGU,
             0x3A => Operation::JGEU,
+            0x3B => Operation::INT,
             0x3C => Operation::CALL,
             0x3D => Operation::RET,
             0x3E => Operation::HLT,
+            0x3F => Operation::IRET,
 
             0x40 => Operation::LOM,
             0x41 => Operation::ROM,
@@ -130,7 +132,8 @@ impl Operand {
             //N
             Operation::NOP |
             Operation::RET |
-            Operation::HLT => {
+            Operation::HLT |
+            Operation::IRET => {
                 Operand::None
             },
 
@@ -217,6 +220,14 @@ impl Operand {
            Operation::PUSH => {
                Operand::parse(typeint, operand, s)
            }
+
+           Operation::INT => {
+               if typeint != 3 {
+                   return Err(());
+               }
+
+               Operand::parse(typeint, operand, s)
+           }
         };
 
         Ok(operand_parsed)
@@ -227,7 +238,8 @@ impl Operand {
             //N
             Operation::NOP |
             Operation::RET |
-            Operation::HLT => {
+            Operation::HLT |
+            Operation::IRET => {
                 Operand::None
             },
 
@@ -308,6 +320,10 @@ impl Operand {
            Operation::LOI |
            Operation::LFL |
            Operation::PUSH => {
+               Operand::None
+           }
+
+           Operation::INT => {
                Operand::None
            }
        };

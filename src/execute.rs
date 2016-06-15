@@ -167,7 +167,7 @@ impl Instructor for Cpu {
                 let mut stack = self.registers.gp[15];
                 let val = self.retrieve_mem_short(stack);
                 self.store_op_short(inst.op1, val);
-                stack = stack.wrapping_add(4);
+                stack = stack.wrapping_add(1);
                 self.registers.gp[15] = stack;
             },
             Operation::PUSH => {
@@ -577,6 +577,27 @@ impl Instructor for Cpu {
                 if !self.get_carry_flag() {
                     self.store_op_long(inst.op2, A);
                 }
+            },
+            Operation::INT => {
+                self.interrupt(A);
+            },
+            Operation::IRET => {
+                let mut stack = self.registers.gp[15];
+                let pc = self.retrieve_mem_long(stack);
+                stack = stack.wrapping_add(4);
+                let rflags = self.retrieve_mem_long(stack);
+                stack = stack.wrapping_add(4);
+                self.registers.gp[15] = stack;
+
+                self.pc = pc;
+                self.registers.rflags = rflags;
+
+                if !self.get_kernel_flag() {
+                    // Swap rs with rk0
+                    let rk0 = self.registers.rk[0];
+                    self.registers.rk[0] = self.registers.gp[15];
+                    self.registers.gp[15] = rk0;
+                }
             }
         }
     }
@@ -584,8 +605,8 @@ impl Instructor for Cpu {
 
 #[allow(non_snake_case)]
 fn XOR2(a: u32) -> bool {
-    let abool = (a >> 30) & 0b1 == 1;
-    let bbool = (a >> 31) & 0b1 == 1;
+    let abool = (a >> 0) & 0b1 == 1;
+    let bbool = (a >> 1) & 0b1 == 1;
 
     (abool && !bbool) || (bbool && !abool)
 }

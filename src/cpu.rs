@@ -10,10 +10,9 @@ use die::*;
 pub struct Cpu {
     pub memory: Memory,
     pub registers: Registers,
-
     pub pc : u32,
-
-    pub fault: Fault
+    pub fault: Fault,
+    pub interrupts: Vec<Interrupt>
 }
 
 impl Cpu {
@@ -30,7 +29,8 @@ impl Cpu {
         Cpu { registers: Registers::new(),
               memory: memory,
               pc: 0,
-              fault: Fault::FAULT_NONE }
+              fault: Fault::FAULT_NONE,
+              interrupts: Vec::new() }
     }
 
     pub fn execute(&mut self) {
@@ -41,19 +41,28 @@ impl Cpu {
 
             let inst_bytes = self.retrieve_mem_long(pc); //TODO: paging!
 
-            //TODO: self.handle_fault(pc);
+            if self.handle_fault_retrieve(pc) {
+                continue;
+            }
 
             let instruction = self.decode(inst_bytes);
 
-            //TODO: check for fault in decoding instruction
+            if self.handle_fault_decode(pc) {
+                continue;
+            }
 
             self.pc += 4; // Read 4 bytes.
-
             self.instruct(instruction);
 
             debug!("Registers after inst: {}", self.registers);
 
-            //TODO: Check for faults, handle faults.
+            let inst_size = self.pc - pc;
+
+            if self.handle_fault_execute(pc) {
+                continue;
+            }
+
+            self.handle_interrupt(pc + inst_size);
         }
     }
 
@@ -132,6 +141,18 @@ impl Cpu {
     pub fn get_ovf_flag(&self) -> bool {
         (self.registers.rflags >> 3) & 0b1 == 1
     }
+
+    pub fn get_kernel_flag(&self) -> bool {
+        (self.registers.rflags >> 4) & 0b1 == 1
+    }
+
+    pub fn get_handling_flag(&self) -> bool {
+        (self.registers.rflags >> 5) & 0b1 == 1
+    }
+
+    pub fn get_mask_flag(&self) -> bool {
+        (self.registers.rflags >> 6) & 0b1 == 1
+    }
 }
 
 pub trait FlagOperations<T> {
@@ -139,6 +160,9 @@ pub trait FlagOperations<T> {
     fn set_zero_flag(&mut self, a: T);
     fn set_neg_flag(&mut self, a: T);
     fn set_ovf_flag(&mut self, a: T);
+    fn set_kernel_flag(&mut self, a: T);
+    fn set_handling_flag(&mut self, a: T);
+    fn set_mask_flag(&mut self, a: T);
 }
 
 impl FlagOperations<u32> for Cpu {
@@ -169,6 +193,27 @@ impl FlagOperations<u32> for Cpu {
         k |= if a > 0 { 1 << 3 } else {0};
         self.registers.rflags = k;
     }
+
+    fn set_kernel_flag(&mut self, a: u32) {
+        let mut k = self.registers.rflags;
+        k &= !(1 << 4);
+        k |= if a > 0 { 1 << 4 } else {0};
+        self.registers.rflags = k;
+    }
+
+    fn set_handling_flag(&mut self, a: u32) {
+        let mut k = self.registers.rflags;
+        k &= !(1 << 5);
+        k |= if a > 0 { 1 << 5 } else {0};
+        self.registers.rflags = k;
+    }
+
+    fn set_mask_flag(&mut self, a: u32) {
+        let mut k = self.registers.rflags;
+        k &= !(1 << 6);
+        k |= if a > 0 { 1 << 6 } else {0};
+        self.registers.rflags = k;
+    }
 }
 
 impl FlagOperations<bool> for Cpu {
@@ -197,6 +242,27 @@ impl FlagOperations<bool> for Cpu {
         let mut k = self.registers.rflags;
         k &= !(1 << 3);
         k |= if a { 1 << 3 } else {0};
+        self.registers.rflags = k;
+    }
+
+    fn set_kernel_flag(&mut self, a: bool) {
+        let mut k = self.registers.rflags;
+        k &= !(1 << 4);
+        k |= if a { 1 << 4 } else {0};
+        self.registers.rflags = k;
+    }
+
+    fn set_handling_flag(&mut self, a: bool) {
+        let mut k = self.registers.rflags;
+        k &= !(1 << 5);
+        k |= if a { 1 << 5 } else {0};
+        self.registers.rflags = k;
+    }
+
+    fn set_mask_flag(&mut self, a: bool) {
+        let mut k = self.registers.rflags;
+        k &= !(1 << 6);
+        k |= if a { 1 << 6 } else {0};
         self.registers.rflags = k;
     }
 }
@@ -427,22 +493,218 @@ impl Cpu {
 
 impl Cpu {
     pub fn fault(&mut self, fault: Fault) {
+        self.check_double_fault();
         self.fault = fault;
-        // if it's not faulted, put as fault and reset handled = false.
-        // if it's faulted but not handled, ignore it.
-        // if it's handled, double-fault and reset handled = false.
-        // if it's handled and fault is double fault, HLT.
+        //TODO: skip maskable faults
     }
 
-    pub fn handle_fault(&mut self) {
+    /* The only fault that can occur when retrieving an instruction byte
+     * is an INVALID_MEMORY_ACCESS fault. */
+    pub fn handle_fault_retrieve(&mut self, pc: u32) -> bool {
+        match self.fault {
+            Fault::FAULT_INVALID_MEMORY_ACCESS(location) => {
+                self.fault = Fault::FAULT_NONE;
+                let rflags = self.registers.rflags;
 
+                if self.get_kernel_flag() {
+                    // Swap rs with rk0
+                    let rk0 = self.registers.rk[0];
+                    self.registers.rk[0] = self.registers.gp[15];
+                    self.registers.gp[15] = rk0;
+                    // Enable privileged mode and the handling flag
+                    self.set_kernel_flag(true);
+                }
+
+                let mut rs = self.registers.gp[15];
+                self.set_handling_flag(true);
+                self.set_mask_flag(true);
+
+                // Push return pc and fault location
+                rs = rs.wrapping_sub(4);
+                self.store_mem_long(rs, rflags);
+                rs = rs.wrapping_sub(4);
+                self.store_mem_long(rs, 0);
+                rs = rs.wrapping_sub(4);
+                self.store_mem_long(rs, pc);
+                rs = rs.wrapping_sub(4);
+                self.store_mem_long(rs, location);
+                self.registers.gp[15] = rs;
+
+                let ri = self.registers.ri;
+                let offset = self.retrieve_mem_long(ri + 4); /* INT 0x1 */
+                self.pc = offset;
+
+                // And tell the CPU to stop executing the current instruction
+                return true;
+            },
+            _ => { return false; }
+        }
+    }
+
+    /* The only fault that can occur when decoding an instruction byte is
+       an ILLEGAL_INSTRUCTION fault. */
+    pub fn handle_fault_decode(&mut self, pc: u32) -> bool {
+        match self.fault {
+            Fault::FAULT_ILLEGAL_INSTRUCTION => {
+                self.fault = Fault::FAULT_NONE;
+                let rflags = self.registers.rflags;
+
+                if self.get_kernel_flag() {
+                    // Swap rs with rk0
+                    let rk0 = self.registers.rk[0];
+                    self.registers.rk[0] = self.registers.gp[15];
+                    self.registers.gp[15] = rk0;
+                    // Enable privileged mode and the handling flag
+                    self.set_kernel_flag(true);
+                }
+
+                let mut rs = self.registers.gp[15];
+                self.set_handling_flag(true);
+                self.set_mask_flag(true);
+
+                // Push old rflags and return pc
+                rs = rs.wrapping_sub(4);
+                self.store_mem_long(rs, rflags);
+                rs = rs.wrapping_sub(4);
+                self.store_mem_long(rs, pc);
+                self.registers.gp[15] = rs;
+
+                let ri = self.registers.ri;
+                let offset = self.retrieve_mem_long(ri + 0); /* INT 0x0 */
+                self.pc = offset;
+
+                // And tell the CPU to stop executing the current instruction
+                return true;
+            },
+            _ => { return false; }
+        }
+    }
+
+    /* Handles faults which will happen after executing an instruction */
+    pub fn handle_fault_execute(&mut self, pc: u32) -> bool {
+        match self.fault {
+            Fault::FAULT_INVALID_MEMORY_ACCESS(location) => {
+                self.fault = Fault::FAULT_NONE;
+                let rflags = self.registers.rflags;
+
+                if self.get_kernel_flag() {
+                    // Swap rs with rk0
+                    let rk0 = self.registers.rk[0];
+                    self.registers.rk[0] = self.registers.gp[15];
+                    self.registers.gp[15] = rk0;
+                    // Enable privileged mode and the handling flag
+                    self.set_kernel_flag(true);
+                }
+
+                let mut rs = self.registers.gp[15];
+                self.set_handling_flag(true);
+                self.set_mask_flag(true);
+
+                // Push return pc and fault location
+                rs = rs.wrapping_sub(4);
+                self.store_mem_long(rs, rflags);
+                rs = rs.wrapping_sub(4);
+                self.store_mem_long(rs, pc);
+                rs = rs.wrapping_sub(4);
+                self.store_mem_long(rs, location);
+                self.registers.gp[15] = rs;
+
+                let ri = self.registers.ri;
+                let offset = self.retrieve_mem_long(ri + 4); /* INT 0x1 */
+                self.pc = offset;
+
+                // And tell the CPU to stop executing the current instruction
+                return true;
+            },
+            Fault::FAULT_HALT => {
+                die("Halted.");
+            }
+            _ => { return false; }
+        }
+    }
+
+    fn handle_interrupt(&mut self, pc: u32) {
+        if self.get_mask_flag() {
+            return;
+        }
+
+        if self.interrupts.len() > 1 {
+            let int = self.interrupts.remove(0);
+
+            self.fault = Fault::FAULT_NONE;
+            let rflags = self.registers.rflags;
+
+            if self.get_kernel_flag() {
+                // Swap rs with rk0
+                let rk0 = self.registers.rk[0];
+                self.registers.rk[0] = self.registers.gp[15];
+                self.registers.gp[15] = rk0;
+                // Enable privileged mode and the handling flag
+                self.set_kernel_flag(true);
+            }
+
+            let mut rs = self.registers.gp[15];
+            self.set_mask_flag(true);
+
+            // Push return pc and fault location
+            rs = rs.wrapping_sub(4);
+            self.store_mem_long(rs, rflags);
+            rs = rs.wrapping_sub(4);
+            self.store_mem_long(rs, pc);
+
+            let interrupt_offset;
+
+            match int {
+                Interrupt::INT_KEYPRESS(key) => {
+                    rs = rs.wrapping_sub(1);
+                    self.store_mem_short(rs, key);
+                    interrupt_offset = 0x2;
+                },
+                Interrupt::INT_PHONY => {
+                    interrupt_offset = 0x3;
+                }
+            }
+
+            self.registers.gp[15] = rs;
+
+            let ri = self.registers.ri;
+            let offset = self.retrieve_mem_long(ri + interrupt_offset * 4); /* INT 0x1 */
+            self.pc = offset;
+        }
+    }
+
+    fn check_double_fault(&mut self) {
+        if self.get_handling_flag() {
+            die("Double fault in fault handler!");
+        }
+    }
+
+    pub fn interrupt(&mut self, int_id: u32) {
+        let r0 = self.registers.gp[0];
+
+        match int_id {
+            0 => { self.fault(Fault::FAULT_ILLEGAL_INSTRUCTION); }
+            1 => { self.fault(Fault::FAULT_INVALID_MEMORY_ACCESS(r0)); }
+            2 => { self.interrupts.push(Interrupt::INT_KEYPRESS((r0 & 0xFF) as u8)); }
+            3 => { self.interrupts.push(Interrupt::INT_PHONY); }
+            _ => { self.fault(Fault::FAULT_BAD_INTERRUPT); }
+        }
     }
 }
 
 #[allow(non_camel_case_types)]
+#[derive(Copy,Clone)]
 pub enum Fault {
     FAULT_NONE,
-    FAULT_HALT,
-    FAULT_ILLEGAL_INSTRUCTION,
-    FAULT_INVALID_MEMORY_ACCESS(u32),
+    /* 0x0 */ FAULT_ILLEGAL_INSTRUCTION,
+    /* 0x1 */ FAULT_INVALID_MEMORY_ACCESS(u32),
+    /* 0x4 */ FAULT_BAD_INTERRUPT,
+    FAULT_HALT
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Copy,Clone)]
+pub enum Interrupt {
+    /* 0x2 */ INT_KEYPRESS(u8), /* INT 0x2 */
+    /* 0x3 */ INT_PHONY
 }
