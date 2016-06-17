@@ -579,6 +579,7 @@ impl Instructor for Cpu {
                 }
             },
             Operation::INT => {
+                //TODO: Any essential interrupt in user mode should fault BAD_INTERRUPT instead
                 self.interrupt(A);
             },
             Operation::IRET => {
