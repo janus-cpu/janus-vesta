@@ -56,7 +56,7 @@ impl Cpu {
 
             debug!("Registers after inst: {}", self.registers);
 
-            let inst_size = self.pc - pc;
+            let inst_size = instruction.instruction_size();
 
             if self.handle_fault_execute(pc) {
                 continue;
@@ -88,7 +88,7 @@ impl Cpu {
             debug!("{}", i);
         } else if let Err(_) = inst {
             debug!("Error decoding instruction...");
-            panic!("OH NO!");
+            // panic!("OH NO!");
         }
 
         return inst.unwrap_or_else(|_| {
@@ -503,6 +503,7 @@ impl Cpu {
     pub fn handle_fault_retrieve(&mut self, pc: u32) -> bool {
         match self.fault {
             Fault::FAULT_INVALID_MEMORY_ACCESS(location) => {
+                debug!("Invalid memory access at {}", location);
                 self.fault = Fault::FAULT_NONE;
                 let rflags = self.registers.rflags;
 
@@ -537,7 +538,8 @@ impl Cpu {
                 // And tell the CPU to stop executing the current instruction
                 return true;
             },
-            _ => { return false; }
+            Fault::FAULT_NONE => { return false; }
+            _ => { unreachable!(); }
         }
     }
 
@@ -576,7 +578,8 @@ impl Cpu {
                 // And tell the CPU to stop executing the current instruction
                 return true;
             },
-            _ => { return false; }
+            Fault::FAULT_NONE => { return false; }
+            _ => { unreachable!(); }
         }
     }
 
@@ -619,22 +622,24 @@ impl Cpu {
             Fault::FAULT_HALT => {
                 die("Halted.");
             }
-            _ => { return false; }
+            Fault::FAULT_NONE => { return false; }
+            _ => { unreachable!(); }
         }
     }
 
     fn handle_interrupt(&mut self, pc: u32) {
+        debug!("Trying to handle {} interrupts", self.interrupts.len());
+
         if self.get_mask_flag() {
             return;
         }
 
-        if self.interrupts.len() > 1 {
+        if self.interrupts.len() > 0 {
             let int = self.interrupts.remove(0);
-
-            self.fault = Fault::FAULT_NONE;
             let rflags = self.registers.rflags;
 
-            if self.get_kernel_flag() {
+            if !self.get_kernel_flag() {
+                //TODO: this may be broken
                 // Swap rs with rk0
                 let rk0 = self.registers.rk[0];
                 self.registers.rk[0] = self.registers.gp[15];

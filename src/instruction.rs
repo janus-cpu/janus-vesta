@@ -29,6 +29,24 @@ impl Instruction {
         Instruction { op: Operation::NOP, size: Size::Long,
                       op1: Operand::None, op2: Operand::None }
     }
+
+    pub fn instruction_size(&self) -> u32 {
+        4 +
+        match self.op1 {
+            Operand::None => 0,
+            Operand::Reg(_) => 0,
+            Operand::RegDeref(_) => 0,
+            Operand::RegOff(_, k) => { if k == 7 { 4 } else { 0 }},
+            Operand::Const => 4
+        } +
+        match self.op2 {
+            Operand::None => 0,
+            Operand::Reg(_) => 0,
+            Operand::RegDeref(_) => 0,
+            Operand::RegOff(_, k) => { if k == 7 { 4 } else { 0 }},
+            Operand::Const => 4
+        }
+    }
 }
 
 #[derive(Copy, Clone)]

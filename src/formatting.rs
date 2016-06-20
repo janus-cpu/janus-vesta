@@ -131,9 +131,11 @@ impl Display for Registers {
             }
         }
 
-        try!(write!(f, "FLAGS - c: {}, z: {}, n: {}, o: {}\n",
+        try!(write!(f, "FLAGS - c: {}, z: {}, n: {}, o: {}, k: {}, h: {}, m: {}\n",
                     ((self.rflags >> 0) & 0b1), ((self.rflags >> 1) & 0b1),
-                    ((self.rflags >> 2) & 0b1), ((self.rflags >> 3) & 0b1)));
+                    ((self.rflags >> 2) & 0b1), ((self.rflags >> 3) & 0b1),
+                    ((self.rflags >> 4) & 0b1), ((self.rflags >> 5) & 0b1),
+                    ((self.rflags >> 6) & 0b1)));
         try!(write!(f, "RM: 0x{:X}\n", self.rm));
         try!(write!(f, "RI: 0x{:X}\n", self.ri));
 

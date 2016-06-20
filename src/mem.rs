@@ -37,6 +37,7 @@ impl Memory {
 
             Ok((a) | (b << 8) | (c << 16) | (d << 24))
         } else {
+            panic!("Invalid memory location {}", location);
             Err(())
         }
     }
