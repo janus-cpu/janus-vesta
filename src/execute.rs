@@ -1,613 +1,385 @@
-use instruction::Instruction;
-use instruction::Size;
-use instruction::Operation;
+use debug::*;
+use wrapping_util::WrappingIncrement;
+
 use cpu::Cpu;
-use cpu::Fault;
-use cpu::FlagOperations;
-use die::die;
+use mem::Mem;
+use operation::{Operation, Operand, OperandCompute};
+use flag::*;
+use interrupt::*;
 
-pub trait Instructor {
-    fn instruct(&mut self, instruction: Instruction);
-    fn instruct_short(&mut self, instruction: Instruction);
-    fn instruct_long(&mut self, instruction: Instruction);
+pub trait Execute {
+    fn execute_operation(&mut self, operation: Operation, op1: Operand, op2: Operand);
 }
 
-impl Instructor for Cpu {
-    fn instruct(&mut self, inst: Instruction) {
-        match inst.size {
-            Size::Short => self.instruct_short(inst),
-            Size::Long  => self.instruct_long(inst)
-        }
-    }
+impl Execute for Cpu {
+    fn execute_operation(&mut self, operation: Operation, op1: Operand, op2: Operand) {
+        use operation::Operation::*;
 
-    #[allow(non_snake_case)]
-    fn instruct_short(&mut self, inst: Instruction) {
-        let A = self.retrieve_op_short(inst.op1) as u32;
-        let B = self.retrieve_op_short(inst.op2) as u32;
+        debug!("{} {} {}", operation, op1, op2);
 
-        match inst.op {
-            Operation::NOP => { },
-            Operation::ADD => {
-                let C = A + B;
+        match operation {
+            ADD => {
+                if let Some((a, b)) = self.get_ops_long(op1, op2) {
+                    let c = a as u64 + b as u64;
 
-                self.set_carry_flag(C & 0x100);
-                self.set_zero_flag(C == 0);
-                self.set_neg_flag(C & 0x80);
-
-                let carrychain = (A & B) | ((!C) & (A | B));
-                self.set_ovf_flag(XOR2(carrychain >> 6));
-                self.store_op_short(inst.op2, C as u8);
-            },
-            Operation::ADC => {
-                let carryin = if self.get_carry_flag() { 1 } else { 0 };
-                let C = A + B + carryin;
-
-                self.set_carry_flag(C & 0x100);
-                self.set_zero_flag(C == 0);
-                self.set_neg_flag(C & 0x80);
-
-                let carrychain = (A & B) | ((!C) & (A | B));
-                self.set_ovf_flag(XOR2(carrychain >> 6));
-                self.store_op_short(inst.op2, C as u8);
-            },
-            Operation::SUB => {
-                let C = B.wrapping_sub(A);
-
-                self.set_zero_flag((C & 0xFF) == 0);
-                self.set_neg_flag(C & 0x80);
-
-                let borrowchain = (C & ((!B) | A)) | ((!B) & A);
-                self.set_carry_flag(borrowchain & 0x80);
-                self.set_ovf_flag(XOR2(borrowchain >> 6));
-                self.store_op_short(inst.op2, C as u8);
-            },
-            Operation::SBB => {
-                let carryin = if self.get_carry_flag() { 1 } else { 0 };
-                let C = B.wrapping_sub(A).wrapping_sub(carryin);
-
-                self.set_zero_flag((C & 0xFF) == 0);
-                self.set_neg_flag(C & 0x80);
-
-                let borrowchain = (C & ((!B) | A)) | ((!B) & A);
-                self.set_carry_flag(borrowchain & 0x80);
-                self.set_ovf_flag(XOR2(borrowchain >> 6));
-                self.store_op_short(inst.op2, C as u8);
-            },
-            Operation::CMP1 | Operation::CMP2 => {
-                let C = B.wrapping_sub(A);
-
-                self.set_zero_flag((C & 0xFF) == 0);
-                self.set_neg_flag(C & 0x80);
-
-                let borrowchain = (C & ((!B) | A)) | ((!B) & A);
-                self.set_carry_flag(borrowchain & 0x80);
-                self.set_ovf_flag(XOR2(borrowchain >> 6));
-            },
-            Operation::TEST1 | Operation::TEST2 => {
-                let C = A & B;
-
-                self.set_carry_flag(false);
-                self.set_ovf_flag(false);
-                self.set_zero_flag((C & 0xFF) == 0);
-                self.set_neg_flag(C & 0x80);
-            },
-            Operation::DEC => {
-                let C = A.wrapping_sub(1);
-
-                self.set_zero_flag((C & 0xFF) == 0);
-                self.set_neg_flag(C & 0x80);
-
-                let borrowchain = (C & ((!A) | 1)) | ((!A) & 1);
-                self.set_carry_flag(borrowchain & 0x80);
-                self.set_ovf_flag(XOR2(borrowchain >> 6));
-                self.store_op_short(inst.op1, C as u8);
-            },
-            Operation::INC => {
-                let C = A + 1;
-
-                self.set_carry_flag(C & 0x100);
-                self.set_zero_flag(C == 0);
-                self.set_neg_flag(C & 0x80);
-
-                let carrychain = (A & 1) | ((!C) & (A | 1));
-                self.set_ovf_flag(XOR2(carrychain >> 6));
-                self.store_op_short(inst.op1, C as u8);
-            },
-            Operation::NEG => {
-                let C = (0 as u32).wrapping_sub(A);
-
-                self.set_zero_flag((C & 0xFF) == 0);
-                self.set_neg_flag(C & 0x80);
-                self.set_carry_flag(A != 0);
-
-                let borrowchain = C | A;
-                self.set_ovf_flag(XOR2(borrowchain >> 6));
-                self.store_op_short(inst.op1, C as u8);
-            },
-            Operation::NOT => {
-                let C = !A;
-
-                self.set_carry_flag(false);
-                self.set_ovf_flag(false);
-                self.set_zero_flag((C & 0xFF) == 0);
-                self.set_neg_flag(C & 0x80);
-                self.store_op_short(inst.op1, (C & 0xFF) as u8);
-            },
-            Operation::AND => {
-                let C = A & B;
-
-                self.set_carry_flag(false);
-                self.set_ovf_flag(false);
-                self.set_zero_flag((C & 0xFF) == 0);
-                self.set_neg_flag(C & 0x80);
-                self.store_op_short(inst.op2, (C & 0xFF) as u8);
-            },
-            Operation::OR => {
-                let C = A & B;
-
-                self.set_carry_flag(false);
-                self.set_ovf_flag(false);
-                self.set_zero_flag((C & 0xFF) == 0);
-                self.set_neg_flag(C & 0x80);
-                self.store_op_short(inst.op2, (C & 0xFF) as u8);
-            },
-            Operation::XOR => {
-                let C = A ^ B;
-
-                self.set_carry_flag(false);
-                self.set_ovf_flag(false);
-                self.set_zero_flag((C & 0xFF) == 0);
-                self.set_neg_flag(C & 0x80);
-                self.store_op_short(inst.op2, (C & 0xFF) as u8);
-            },
-            Operation::MOV => {
-                self.store_op_short(inst.op2, A as u8);
-            },
-            Operation::POP => {
-                let mut stack = self.registers.gp[15];
-                let val = self.retrieve_mem_short(stack);
-                self.store_op_short(inst.op1, val);
-                stack = stack.wrapping_add(1);
-                self.registers.gp[15] = stack;
-            },
-            Operation::PUSH => {
-                let mut stack = self.registers.gp[15];
-                stack = stack.wrapping_sub(1);
-                self.registers.gp[15] = stack;
-                self.store_mem_short(stack, A as u8);
-            },
-            Operation::IN => {
-
-            },
-            Operation::OUT => {
-                println!("Printed {} ({}) to CPU out {}", B, B as u8 as char, A);
-            },
-            Operation::XCHG => {
-                self.store_op_short(inst.op1, B as u8);
-                self.store_op_short(inst.op2, A as u8);
-            },
-            Operation::MOVE => {
-                if self.get_zero_flag() {
-                    self.store_op_short(inst.op2, A as u8);
+                    if self.store_op_long(op2, c as u32) {
+                        self.set_arith_long(a, b, c);
+                    }
                 }
             },
-            Operation::MOVNE => {
-                if !self.get_zero_flag() {
-                    self.store_op_short(inst.op2, A as u8);
-                }
-            },
-            Operation::MOVL => {
-                if self.get_neg_flag() != self.get_ovf_flag() {
-                    self.store_op_short(inst.op2, A as u8);
-                }
-            },
-            Operation::MOVLE => {
-                if self.get_neg_flag() != self.get_ovf_flag()
-                   || self.get_zero_flag() {
-                    self.store_op_short(inst.op2, A as u8);
-                }
-            },
-            Operation::MOVG => {
-                if self.get_neg_flag() == self.get_ovf_flag()
-                   && self.get_zero_flag() {
-                    self.store_op_short(inst.op2, A as u8);
-                }
-            },
-            Operation::MOVGE => {
-                if self.get_neg_flag() == self.get_ovf_flag() {
-                    self.store_op_short(inst.op2, A as u8);
-                }
-            },
-            Operation::MOVLU => {
-                if self.get_carry_flag() {
-                    self.store_op_short(inst.op2, A as u8);
-                }
-            },
-            Operation::MOVLEU => {
-                if self.get_carry_flag() || self.get_zero_flag() {
-                    self.store_op_short(inst.op2, A as u8);
-                }
-            },
-            Operation::MOVGU => {
-                if !self.get_carry_flag() && !self.get_zero_flag() {
-                    self.store_op_short(inst.op2, A as u8);
-                }
-            },
-            Operation::MOVGEU => {
-                if !self.get_carry_flag() {
-                    self.store_op_short(inst.op2, A as u8);
-                }
-            }
-            _ => {
-                self.fault(Fault::FAULT_ILLEGAL_INSTRUCTION);
-            }
-        }
-    }
+            ADDS => {
+                /*if let Some((a, b)) = self.get_ops_short(op1, op2) {
+                    let c = a as u32 + b as u32;
 
-    #[allow(non_snake_case)]
-    fn instruct_long(&mut self, inst: Instruction) {
-        let A = self.retrieve_op_long(inst.op1);
-        let B = self.retrieve_op_long(inst.op2);
-
-        match inst.op {
-            Operation::NOP => { },
-            Operation::ADD => {
-                let C = A.wrapping_add(B);
-                let lo = (A & 0xFFFF) + (B & 0xFFFF);
-                let hi = (lo >> 16) + (A >> 16) + (B >> 16);
-                self.set_carry_flag(hi & 0x10000);
-                self.set_zero_flag(C == 0);
-                self.set_neg_flag(C & 0x80000000);
-
-                let carrychain = (A & B) | ((!C) & (A | B));
-                self.set_ovf_flag(XOR2(carrychain >> 30));
-                self.store_op_long(inst.op2, C);
+                    if self.store_op_short(op2, c as u8) {
+                        self.set_arith_short(a, b, c);
+                    }
+                }*/
             },
-            Operation::ADC => {
-                let carryin = if self.get_carry_flag() { 1 } else { 0 };
-                let C = A.wrapping_add(B).wrapping_add(carryin);
-                let lo = (A & 0xFFFF) + (B & 0xFFFF) + carryin;
-                let hi = (lo >> 16) + (A >> 16) + (B >> 16);
-                self.set_carry_flag(hi & 0x10000);
-                self.set_zero_flag(C == 0);
-                self.set_neg_flag(C & 0x80000000);
+            SUB => {
+                if let Some((a, b)) = self.get_ops_long(op1, op2) {
+                    let c = (b as u64).wrapping_sub(a as u64);
 
-                let carrychain = (A & B) | ((!C) & (A | B));
-                self.set_ovf_flag(XOR2(carrychain >> 30));
-                self.store_op_long(inst.op2, C);
-            },
-            Operation::SUB => {
-                let C = B.wrapping_sub(A);
-
-                self.set_zero_flag(C == 0);
-                self.set_neg_flag(C & 0x80000000);
-
-                let borrowchain = (C & ((!B) | A)) | ((!B) & A);
-                self.set_carry_flag(borrowchain & 0x80000000);
-                self.set_ovf_flag(XOR2(borrowchain >> 30));
-                self.store_op_long(inst.op2, C);
-            },
-            Operation::SBB => {
-                let carryin = if self.get_carry_flag() { 1 } else { 0 };
-                let C = B.wrapping_sub(A).wrapping_sub(carryin);
-
-                self.set_zero_flag(C == 0);
-                self.set_neg_flag(C & 0x80000000);
-
-                let borrowchain = (C & ((!B) | A)) | ((!B) & A);
-                self.set_carry_flag(borrowchain & 0x80000000);
-                self.set_ovf_flag(XOR2(borrowchain >> 30));
-                self.store_op_long(inst.op2, C);
-            },
-            Operation::CMP1 | Operation::CMP2 => {
-                let C = B.wrapping_sub(A);
-
-                self.set_zero_flag(C == 0);
-                self.set_neg_flag(C & 0x80000000);
-
-                let borrowchain = (C & ((!B) | A)) | ((!B) & A);
-                self.set_carry_flag(borrowchain & 0x80000000);
-                self.set_ovf_flag(XOR2(borrowchain >> 30));
-            },
-            Operation::TEST1 | Operation::TEST2 => {
-                let C = A & B;
-
-                self.set_carry_flag(false); // clear
-                self.set_ovf_flag(false);   // clear
-                self.set_zero_flag(C == 0);
-                self.set_neg_flag(C & 0x80000000);
-            },
-            Operation::DEC => {
-                let C = A.wrapping_sub(1);
-
-                self.set_zero_flag(C == 0);
-                self.set_neg_flag(C & 0x80000000);
-
-                let borrowchain = (C & ((!A) | 1)) | ((!A) & 1);
-                self.set_carry_flag(borrowchain & 0x80000000);
-                self.set_ovf_flag(XOR2(borrowchain >> 30));
-                self.store_op_long(inst.op1, C);
-            },
-            Operation::INC => {
-                let C = A.wrapping_add(1);
-                let lo = (A & 0xFFFF) + 1;
-                let hi = (lo >> 16) + (A >> 16);
-                self.set_carry_flag(hi & 0x10000);
-                self.set_zero_flag(C == 0);
-                self.set_neg_flag(C & 0x80000000);
-
-                let carrychain = (A & 1) | ((!C) & (1 | B));
-                self.set_ovf_flag(XOR2(carrychain >> 30));
-                self.store_op_long(inst.op1, C);
-            },
-            Operation::NEG => {
-                let C = (0 as u32).wrapping_sub(A);
-
-                self.set_zero_flag(C == 0);
-                self.set_neg_flag(C & 0x80000000);
-                self.set_carry_flag(C != 0);
-
-                let borrowchain = C | A;
-                self.set_ovf_flag(XOR2(borrowchain >> 30));
-                self.store_op_long(inst.op1, C);
-            },
-            Operation::NOT => {
-                self.set_carry_flag(false); // clear
-                self.set_ovf_flag(false);   // clear
-
-                self.set_zero_flag(A == 0);
-                self.set_neg_flag((!A) & 0x80000000);
-                self.store_op_long(inst.op1, !A);
-            },
-            Operation::AND => {
-                let C = A & B;
-
-                self.set_carry_flag(false); // clear
-                self.set_ovf_flag(false);   // clear
-
-                self.set_zero_flag(C == 0);
-                self.set_neg_flag(C & 0x80000000);
-                self.store_op_long(inst.op2, C);
-            },
-            Operation::OR => {
-                let C = A | B;
-
-                self.set_carry_flag(false); // clear
-                self.set_ovf_flag(false);   // clear
-
-                self.set_zero_flag(C == 0);
-                self.set_neg_flag(C & 0x80000000);
-                self.store_op_long(inst.op2, C);
-            },
-            Operation::XOR => {
-                let C = A ^ B;
-
-                self.set_carry_flag(false); // clear
-                self.set_ovf_flag(false);   // clear
-
-                self.set_zero_flag(C == 0);
-                self.set_neg_flag(C & 0x80000000);
-                self.store_op_long(inst.op2, C);
-            },
-            Operation::JMP => {
-                self.pc = A;
-            },
-            Operation::JE => {
-                if self.get_zero_flag() {
-                    self.pc = A;
+                    if self.store_op_long(op2, c as u32) {
+                        self.set_arith_long(a, b, c);
+                    }
                 }
             },
-            Operation::JNE => {
-                if !self.get_zero_flag() {
-                    self.pc = A;
-                }
-            },
-            Operation::JL => {
-                if self.get_neg_flag() != self.get_ovf_flag() {
-                    self.pc = A;
-                }
-            },
-            Operation::JLE => {
-                if self.get_neg_flag() != self.get_ovf_flag()
-                   || self.get_zero_flag() {
-                    self.pc = A;
-                }
-            },
-            Operation::JG => {
-                if self.get_neg_flag() == self.get_ovf_flag()
-                   && !self.get_zero_flag() {
-                    self.pc = A;
-                }
-            },
-            Operation::JGE => {
-                if self.get_neg_flag() == self.get_ovf_flag() {
-                    self.pc = A;
-                }
-            },
-            Operation::JLU => {
-                if self.get_carry_flag() {
-                    self.pc = A;
-                }
-            },
-            Operation::JLEU => {
-                if self.get_carry_flag() || self.get_zero_flag() {
-                    self.pc = A;
-                }
-            },
-            Operation::JGU => {
-                if !self.get_carry_flag() && !self.get_zero_flag() {
-                    self.pc = A;
-                }
-            },
-            Operation::JGEU => {
-                if !self.get_carry_flag() {
-                    self.pc = A;
-                }
-            },
-            Operation::CALL => {
-                // decrement stack
-                let mut stack = self.registers.gp[15];
-                stack = stack.wrapping_sub(4);
-                self.registers.gp[15] = stack;
-                // Push old rr
-                let oldrr = self.registers.rr;
-                self.store_mem_long(stack, oldrr);
-                // move pc into new rr
-                self.registers.rr = self.pc;
-                // jump to new location
-                self.pc = A;
-            },
-            Operation::RET => {
-                // jump to rr
-                self.pc = self.registers.rr;
-                // pop old rr
-                let stack = self.registers.gp[15];
-                let val = self.retrieve_mem_long(stack);
-                self.registers.rr = val;
-                // increment stack
-                let mut stack = self.registers.gp[15];
-                stack = stack.wrapping_add(4);
-                self.registers.gp[15] = stack;
-            },
-            Operation::HLT => {
-                self.fault(Fault::FAULT_HALT);
-                die("Halted!");
-            },
-            Operation::ROM => {
-                let val = self.registers.rm;
-                self.store_op_long(inst.op1, val);
-            },
-            Operation::LOM => {
-                self.registers.rm = A;
-            },
-            Operation::ROI => {
-                let val = self.registers.ri;
-                self.store_op_long(inst.op1, val);
-            },
-            Operation::LOI => {
-                self.registers.ri = A;
-            },
-            Operation::ROP => {
-                let val = self.pc;
-                self.store_op_long(inst.op1, val);
-            },
-            Operation::LFL => {
-                //TODO: mask for privileges.
-                self.registers.rflags = A;
-            },
-            Operation::RFL => {
-                let val = self.registers.rflags;
-                self.store_op_long(inst.op1, val);
-            },
-            Operation::MOV => {
-                self.store_op_long(inst.op2, A);
-            },
-            Operation::PUSH => {
-                let mut stack = self.registers.gp[15];
-                stack = stack.wrapping_sub(4);
-                self.registers.gp[15] = stack;
-                self.store_mem_long(stack, A);
-            },
-            Operation::POP => {
-                let mut stack = self.registers.gp[15];
-                let val = self.retrieve_mem_long(stack);
-                self.store_op_long(inst.op1, val);
-                stack = stack.wrapping_add(4);
-                self.registers.gp[15] = stack;
-            },
-            Operation::IN => {
+            SUBS => {
+                /*if let Some((a, b)) = self.get_ops_short(op1, op2) {
+                    let c = (b as u32).wrapping_sub(a as u32);
 
+                    if self.store_op_short(op2, c as u8) {
+                        self.set_arith_short(a, b, c);
+                    }
+                }*/
             },
-            Operation::OUT => {
-                //TODO: do this actually...
-                println!("Printed {} ({}) to CPU out {}", B, B as u8 as char, A);
-            },
-            Operation::XCHG => {
-                self.store_op_long(inst.op2, A);
-                self.store_op_long(inst.op1, B);
-            },
-            Operation::MOVE => {
-                if self.get_zero_flag() {
-                    self.store_op_long(inst.op2, A);
-                }
-            },
-            Operation::MOVNE => {
-                if !self.get_zero_flag() {
-                    self.store_op_long(inst.op2, A);
-                }
-            },
-            Operation::MOVL => {
-                if self.get_neg_flag() != self.get_ovf_flag() {
-                    self.store_op_long(inst.op2, A);
-                }
-            },
-            Operation::MOVLE => {
-                if self.get_neg_flag() != self.get_ovf_flag()
-                   || self.get_zero_flag() {
-                    self.store_op_long(inst.op2, A);
-                }
-            },
-            Operation::MOVG => {
-                if self.get_neg_flag() == self.get_ovf_flag()
-                   && self.get_zero_flag() {
-                    self.store_op_long(inst.op2, A);
-                }
-            },
-            Operation::MOVGE => {
-                if self.get_neg_flag() == self.get_ovf_flag() {
-                    self.store_op_long(inst.op2, A);
-                }
-            },
-            Operation::MOVLU => {
-                if self.get_carry_flag() {
-                    self.store_op_long(inst.op2, A);
-                }
-            },
-            Operation::MOVLEU => {
-                if self.get_carry_flag() || self.get_zero_flag() {
-                    self.store_op_long(inst.op2, A);
-                }
-            },
-            Operation::MOVGU => {
-                if !self.get_carry_flag() && !self.get_zero_flag() {
-                    self.store_op_long(inst.op2, A);
-                }
-            },
-            Operation::MOVGEU => {
-                if !self.get_carry_flag() {
-                    self.store_op_long(inst.op2, A);
-                }
-            },
-            Operation::INT => {
-                //TODO: Any essential interrupt in user mode should fault BAD_INTERRUPT instead
-                self.interrupt(A);
-            },
-            Operation::IRET => {
-                let mut stack = self.registers.gp[15];
-                let pc = self.retrieve_mem_long(stack);
-                stack = stack.wrapping_add(4);
-                let rflags = self.retrieve_mem_long(stack);
-                stack = stack.wrapping_add(4);
-                self.registers.gp[15] = stack;
+            ADC => {},
+            ADCS => {},
+            SBB => {},
+            SBBS => {},
+            NOR => {},
+            NORS => {},
+            NAND => {},
+            NANDS => {},
+            OR => {},
+            ORS => {},
+            ORN => {},
+            ORNS => {},
+            AND => {},
+            ANDS => {},
+            ANDN => {},
+            ANDNS => {},
+            XNOR => {},
+            XNORS => {},
+            NOT => {},
+            NOTS => {},
+            XOR => {},
+            XORS => {},
+            CMP => {
+                if let Some((a, b)) = self.get_ops_long(op1, op2) {
+                    let c = (b as u64).wrapping_sub(a as u64);
 
-                self.pc = pc;
-                self.registers.rflags = rflags;
+                    if self.store_op_long(op2, c as u32) {
+                        self.set_arith_long(a, b, c);
+                    }
+                }
+            },
+            CMPS => {},
+            TEST => {},
+            TESTS => {},
+            JMP => {
+                if let Some(val) = self.get_op_long(op1) {
+                    self.rp = val;
+                }
+            },
+            JE => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if self.flag_get(ZERO_FLAG) {
+                        self.rp = val;
+                    }
+                }
+            },
+            JNE => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if !self.flag_get(ZERO_FLAG) {
+                        self.rp = val;
+                    }
+                }
+            },
+            JL => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if self.flag_get(NEGATIVE_FLAG) ^ self.flag_get(OVERFLOW_FLAG) {
+                        self.rp = val;
+                    }
+                }
+            },
+            JLE => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if (self.flag_get(NEGATIVE_FLAG) ^ self.flag_get(OVERFLOW_FLAG))
+                            || self.flag_get(ZERO_FLAG) {
+                        self.rp = val;
+                    }
+                }
+            },
+            JG => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if !(self.flag_get(NEGATIVE_FLAG) ^ self.flag_get(OVERFLOW_FLAG))
+                            && !self.flag_get(ZERO_FLAG) {
+                        self.rp = val;
+                    }
+                }
+            },
+            JGE => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if !(self.flag_get(NEGATIVE_FLAG) ^ self.flag_get(OVERFLOW_FLAG)) {
+                        self.rp = val;
+                    }
+                }
+            },
+            JLU => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if self.flag_get(CARRY_FLAG) {
+                        self.rp = val;
+                    }
+                }
+            },
+            JLEU => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if self.flag_get(CARRY_FLAG) || self.flag_get(ZERO_FLAG) {
+                        self.rp = val;
+                    }
+                }
+            },
+            JGU => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if !self.flag_get(CARRY_FLAG) && !self.flag_get(ZERO_FLAG) {
+                        self.rp = val;
+                    }
+                }
+            },
+            JGEU => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if !self.flag_get(CARRY_FLAG) {
+                        self.rp = val;
+                    }
+                }
+            },
+            CALL => {},
+            RET => {},
+            HLT => {
+                if self.flag_get(PROTECT_FLAG) {
+                    self.interrupt_queue.push_back(HALT_INTERRUPT);
+                } else {
+                    fatal!("Halt instruction reached!");
+                }
+            },
+            INT => {},
+            IRET => {},
+            LOM => {
+                if self.flag_get(PROTECT_FLAG) {
+                    self.protect_interrupt = true;
+                } else {
+                    if let Some(val) = self.get_op_long(op1) {
+                        self.rm = val;
+                    }
+                }
+            },
+            ROM => {
+                if self.flag_get(PROTECT_FLAG) {
+                    self.protect_interrupt = true;
+                } else {
+                    let val = self.rm;
+                    self.store_op_long(op1, val);
+                }
+            },
+            LOI => {
+                if self.flag_get(PROTECT_FLAG) {
+                    self.protect_interrupt = true;
+                } else {
+                    if let Some(val) = self.get_op_long(op1) {
+                        self.ri = val;
+                    }
+                }
+            },
+            ROI => {
+                if self.flag_get(PROTECT_FLAG) {
+                    self.protect_interrupt = true;
+                } else {
+                    let val = self.ri;
+                    self.store_op_long(op1, val);
+                }
+            },
+            ROP => {
+                let rp = self.rp;
+                self.store_op_long(op1, rp);
+            },
+            LFL => {},
+            RFL => {
+                let rflags = self.rflags;
+                self.store_op_long(op1, rflags);
+            },
+            LOT => {
+                if self.flag_get(PROTECT_FLAG) {
+                    self.protect_interrupt = true;
+                } else {
+                    if let Some(val) = self.get_op_long(op1) {
+                        self.rkt = val;
+                    }
+                }
+            },
+            ROT => {
+                if self.flag_get(PROTECT_FLAG) {
+                    self.protect_interrupt = true;
+                } else {
+                    let val = self.rkt;
+                    self.store_op_long(op1, val);
+                }
+            },
+            LOS => {
+                if self.flag_get(PROTECT_FLAG) {
+                    self.protect_interrupt = true;
+                } else {
+                    if let Some(val) = self.get_op_long(op1) {
+                        self.rks = val;
+                    }
+                }
+            },
+            ROS => {
+                if self.flag_get(PROTECT_FLAG) {
+                    self.protect_interrupt = true;
+                } else {
+                    let val = self.rks;
+                    self.store_op_long(op1, val);
+                }
+            },
+            LOF => {
+                if self.flag_get(PROTECT_FLAG) {
+                    self.protect_interrupt = true;
+                } else {
+                    if let Some(val) = self.get_op_long(op1) {
+                        self.rf = val;
+                    }
+                }
+            },
+            ROF => {
+                if self.flag_get(PROTECT_FLAG) {
+                    self.protect_interrupt = true;
+                } else {
+                    let val = self.rf;
+                    self.store_op_long(op1, val);
+                }
+            },
+            MOV => {
+                if let Some(val) = self.get_op_long(op1) {
+                    self.store_op_long(op2, val);
+                }
+            },
+            MOVS => {},
+            POP => {
+                let rs = self.reg[15];
+                let val = self.mem_get_long(rs);
 
-                if !self.get_kernel_flag() {
-                    // Swap rs with rk0
-                    let rk0 = self.registers.rk[0];
-                    self.registers.rk[0] = self.registers.gp[15];
-                    self.registers.gp[15] = rk0;
+                if self.store_op_long(op1, val) {
+                    self.reg[15].wrapping_increment(4);
+                }
+            },
+            POPS => {},
+            PUSH => {
+                let rs = self.reg[15].wrapping_sub(4);
+
+                if let Some(val) = self.get_op_long(op1) {
+                    self.mem_set_long(rs, val);
+
+                    if !self.has_memory_interrupt() {
+                        self.reg[15] = rs;
+                    }
+                }
+            },
+            PUSHS => {},
+            IN => {},
+            INS => {},
+            OUT => {},
+            OUTS => {},
+            XCHG => {
+                if let Some((val1, val2)) = self.get_ops_long(op1, op2) {
+                    self.store_op_long(op1, val2) && self.store_op_long(op2, val1);
+                }
+            },
+            XCHGS => {},
+            MOVE => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if self.flag_get(ZERO_FLAG) {
+                        self.store_op_long(op2, val);
+                    }
+                }
+            },
+            MOVNE => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if !self.flag_get(ZERO_FLAG) {
+                        self.store_op_long(op2, val);
+                    }
+                }
+            },
+            MOVL => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if self.flag_get(NEGATIVE_FLAG) ^ self.flag_get(OVERFLOW_FLAG) {
+                        self.store_op_long(op2, val);
+                    }
+                }
+            },
+            MOVLE => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if (self.flag_get(NEGATIVE_FLAG) ^ self.flag_get(OVERFLOW_FLAG))
+                            || self.flag_get(ZERO_FLAG) {
+                        self.store_op_long(op2, val);
+                    }
+                }
+            },
+            MOVG => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if !(self.flag_get(NEGATIVE_FLAG) ^ self.flag_get(OVERFLOW_FLAG))
+                            && !self.flag_get(ZERO_FLAG) {
+                        self.store_op_long(op2, val);
+                    }
+                }
+            },
+            MOVGE => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if !(self.flag_get(NEGATIVE_FLAG) ^ self.flag_get(OVERFLOW_FLAG)) {
+                        self.store_op_long(op2, val);
+                    }
+                }
+            },
+            MOVLU => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if self.flag_get(CARRY_FLAG) {
+                        self.store_op_long(op2, val);
+                    }
+                }
+            },
+            MOVLEU => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if self.flag_get(CARRY_FLAG) || self.flag_get(ZERO_FLAG) {
+                        self.store_op_long(op2, val);
+                    }
+                }
+            },
+            MOVGU => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if !self.flag_get(CARRY_FLAG) && !self.flag_get(ZERO_FLAG) {
+                        self.store_op_long(op2, val);
+                    }
+                }
+            },
+            MOVGEU => {
+                if let Some(val) = self.get_op_long(op1) {
+                    if !self.flag_get(CARRY_FLAG) {
+                        self.store_op_long(op2, val);
+                    }
                 }
             }
+            _ => {}
         }
     }
-}
-
-#[allow(non_snake_case)]
-fn XOR2(a: u32) -> bool {
-    let abool = (a >> 0) & 0b1 == 1;
-    let bbool = (a >> 1) & 0b1 == 1;
-
-    (abool && !bbool) || (bbool && !abool)
 }

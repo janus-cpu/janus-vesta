@@ -1,27 +1,30 @@
 extern crate getopts;
 use getopts::Options;
-use std::env;
-use std::process::exit;
 
 #[macro_use]
-pub mod die;
+mod debug;
+use debug::*;
 
-pub mod cpu;
-pub mod mem;
-pub mod instruction;
-pub mod execute;
-pub mod formatting;
+mod default;
+use default::*;
 
+mod cpu;
 use cpu::Cpu;
-use die::*;
+
+mod wrapping_util;
+mod operation;
+mod interrupt;
+mod flag;
+mod mem;
+mod execute;
 
 fn print_usage(opts: Options) -> ! {
-    let brief = "Usage: vesta KERNEL [options]";
-    print!("{}", opts.usage(&brief));
-    exit(1);
+    let brief = &"Usage: vesta KERNEL [options]";
+    fatal!("{}", opts.usage(brief));
 }
 
 fn main() {
+    use std::env;
     let args: Vec<String> = env::args().collect();
 
     let mut opts = Options::new();
@@ -39,21 +42,21 @@ fn main() {
     }
 
     if matches.opt_present("D") {
-        unsafe { die::debug = true; }
-        debug!("Debugging enabled!");
+        unsafe { DEBUGGING = true; }
+        debug!("Debugging is enabled!");
     }
 
     //TODO: put this default somewhere nice.
-    let memory_size_str = matches.opt_str("M").unwrap_or("2048".to_string());
-
-    let memory_size = memory_size_str.parse::<u32>().die(CANNOT_PARSE_MEMSIZE);
+    let memory_size: u32 = matches.opt_str("M")
+                                  .map(|s| s.parse().unwrap_or_die(ERR_PARSE_MEM_SIZE))
+                                  .unwrap_or(DEFAULT_MEM_SIZE);
 
     let kernel_file = if matches.free.len() == 1 {
-        matches.free[0].clone()
+        &matches.free[0]
     } else {
         print_usage(opts);
     };
 
-    let mut cpu = Cpu::new(kernel_file, memory_size);
-    cpu.execute();
+    let cpu = Cpu::new(kernel_file, memory_size);
+    cpu.boot();
 }
