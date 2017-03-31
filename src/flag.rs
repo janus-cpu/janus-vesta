@@ -1,11 +1,14 @@
+use debug::*;
 use cpu::Cpu;
 
-pub const CARRY_FLAG: u32 = 01;
+pub const CARRY_FLAG: u32 = 0b1;
 pub const ZERO_FLAG: u32 = 0b10;
 pub const NEGATIVE_FLAG: u32 = 0b100;
 pub const OVERFLOW_FLAG: u32 = 0b1000;
 pub const PROTECT_FLAG: u32 = 0b10000;
 pub const EXTERNAL_FLAG: u32 = 0b100000;
+
+pub const ARITH_FLAGS_MASK: u32 = 0b1111;
 
 const U32_MASK: u64 = 0xFFFF_FFFF;
 const LONG_SIGN_BIT: u32 = 0x8000_0000;
@@ -51,5 +54,6 @@ impl Flag for Cpu {
         let b7 = b & SHORT_SIGN_BIT != 0;
         let c7 = c & SHORT_SIGN_BIT as u32 != 0;
         self.flag_set(OVERFLOW_FLAG, (!a7 && !b7 && c7) || (a7 && b7 && !c7));
+        debug!("Flags: {:b}", self.rflags);
     }
 }

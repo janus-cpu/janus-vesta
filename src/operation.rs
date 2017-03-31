@@ -1,5 +1,6 @@
 use std::fmt;
 
+use debug::*;
 use wrapping_util::WrappingIncrement;
 use cpu::Cpu;
 use mem::Mem;
@@ -55,7 +56,7 @@ pub enum Prototype {
 }
 
 impl Operation {
-    pub fn decode(opcode: u32) -> Option<Operation> {
+    pub fn decode(opcode: u8) -> Option<Operation> {
         use self::Operation::*;
 
         Some(match opcode {
@@ -108,10 +109,10 @@ impl Operation {
             0x88 => JLEU,
             0x89 => JGU,
             0x8A => JGEU,
-            0x8C => CALL,
-            0x8D => RET,
-            0x8E => HLT,
-            0x8B => INT,
+            0x8B => CALL,
+            0x8C => RET,
+            0x8D => HLT,
+            0x8E => INT,
             0x8F => IRET,
 
             0x70 => LOM,
@@ -131,16 +132,16 @@ impl Operation {
             0x30 => MOV,
             0x31 => MOVS,
 
-            0xA1 => POP,
-            0xA2 => POPS,
-            0xA3 => PUSH,
-            0xA4 => PUSHS,
-            0xA5 => IN,
-            0xA6 => INS,
-            0xA7 => OUT,
-            0xA8 => OUTS,
-            0xA9 => XCHG,
-            0xAA => XCHGS,
+            0xA0 => POP,
+            0xA1 => POPS,
+            0xA2 => PUSH,
+            0xA3 => PUSHS,
+            0xA4 => IN,
+            0xA5 => INS,
+            0xA6 => OUT,
+            0xA7 => OUTS,
+            0xA8 => XCHG,
+            0xA9 => XCHGS,
 
             0xB0 => MOVE,
             0xB1 => MOVES,
@@ -262,6 +263,8 @@ impl OperandParse for Cpu {
                     self.instr_interrupt = true;
                 }
 
+                debug!("L: {}, R: {}", l, r);
+
                 (l, r)
             }
             Prototype::X => {
@@ -314,6 +317,8 @@ impl OperandParse for Cpu {
         let descriptor = self.mem_get_short(rp);
         self.rp.wrapping_increment(1);
 
+        debug!("Reading operand descriptor: {} as {:b}", descriptor, descriptor);
+
         if descriptor & 0b1 == 0 {
             // DIRECT
             if descriptor & 0b10 == 0 {
@@ -351,12 +356,13 @@ impl OperandParse for Cpu {
     }
 
     fn read_operand_const(&mut self, sz: u8) -> u32 {
+        debug!("Reading operand const size: {}", sz);
         let rp = self.rp;
         match sz {
             0 => 0, // 0-byte constant
             1 => { // 1-byte constant
                 let constant = self.mem_get_short(rp);
-                self.rp.wrapping_increment(2);
+                self.rp.wrapping_increment(1);
                 constant as u32
             }
             2 => { // 2-byte constant
@@ -379,6 +385,9 @@ pub trait OperandCompute {
     fn get_op_long(&mut self, op: Operand) -> Option<u32>;
     fn get_ops_long(&mut self, op1: Operand, op2: Operand) -> Option<(u32, u32)>;
     fn store_op_long(&mut self, op: Operand, val: u32) -> bool;
+    fn get_op_short(&mut self, op: Operand) -> Option<u8>;
+    fn get_ops_short(&mut self, op1: Operand, op2: Operand) -> Option<(u8, u8)>;
+    fn store_op_short(&mut self, op: Operand, val: u8) -> bool;
 }
 
 impl OperandCompute for Cpu {
@@ -430,6 +439,70 @@ impl OperandCompute for Cpu {
                 let addr = (self.reg[o as usize] << s).wrapping_add(self.reg[b as usize])
                                                       .wrapping_add(c);
                 self.mem_set_long(addr, val);
+            }
+        }
+
+        !self.has_memory_interrupt()
+    }
+
+    fn get_op_short(&mut self, op: Operand) -> Option<u8> {
+        let val = match op {
+            Operand::None => unreachable!(),
+            Operand::Constant(c) => {
+                if c > 0xFF {
+                    return None;
+                }
+
+                c as u8
+             },
+            Operand::Register(r) => (self.reg[(r >> 2) as usize] >> (8 * (r & 0b11))) as u8,
+            Operand::IndirectConstant(r, c) => {
+                let addr = self.reg[r as usize].wrapping_add(c);
+                self.mem_get_short(addr)
+            }
+            Operand::IndirectRegister(b, o, s, c) => {
+                let addr = (self.reg[o as usize] << s).wrapping_add(self.reg[b as usize])
+                                                      .wrapping_add(c);
+                self.mem_get_short(addr)
+            }
+        };
+
+        if !self.has_memory_interrupt() {
+            Some(val)
+        } else {
+            None
+        }
+    }
+
+    fn get_ops_short(&mut self, op1: Operand, op2: Operand) -> Option<(u8, u8)> {
+        if let Some(val1) = self.get_op_short(op1) {
+            if let Some(val2) = self.get_op_short(op2) {
+                return Some((val1, val2));
+            }
+        }
+
+        None
+    }
+
+    fn store_op_short(&mut self, op: Operand, val: u8) -> bool {
+        match op {
+            Operand::None => unreachable!(),
+            Operand::Constant(_) => unreachable!(),
+            Operand::Register(r) => {
+                let reg = r >> 2;
+                let sel = r & 0b11;
+                let mask = 0xFF << (sel * 8);
+                self.reg[reg as usize] &= !mask;
+                self.reg[reg as usize] |= (val as u32) << (sel * 8);
+            }
+            Operand::IndirectConstant(r, c) => {
+                let addr = self.reg[r as usize].wrapping_add(c);
+                self.mem_set_short(addr, val);
+            }
+            Operand::IndirectRegister(b, o, s, c) => {
+                let addr = (self.reg[o as usize] << s).wrapping_add(self.reg[b as usize])
+                                                      .wrapping_add(c);
+                self.mem_set_short(addr, val);
             }
         }
 
@@ -541,7 +614,7 @@ impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             &Operand::None => Ok(()),
-            &Operand::Constant(c) => write!(f, "{}", c),
+            &Operand::Constant(c) => write!(f, "const {}", c),
             &Operand::Register(r) => write!(f, "r{}", r),
             &Operand::IndirectConstant(r, c) => write!(f, "[r{} + {}]", r, c),
             &Operand::IndirectRegister(b, o, s, c) => write!(f, "[r{} + {} * r{} + {}]", b, 1 << s, o, c),
