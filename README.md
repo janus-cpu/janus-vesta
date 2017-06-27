@@ -1,12 +1,12 @@
 # vesta
 
 ## About
-The Vesta Virtual Machine (`vesta`) is a virtual CPU emulating the Janus (CISC) instruction set. 
-Currently, it can execute programs assembled with the [Janus Assembler](https://github.com/janus-cpu/janus-jas); 
+The Vesta Virtual Machine (`vesta`) is a virtual CPU emulating the Janus (CISC) instruction set.
+Currently, it can execute programs assembled with the [Janus Assembler](https://github.com/janus-cpu/janus-jas);
 however, we are hoping to eventually write a more complex toolchain including a small C-like language and a linker.
 
 ## How do I test it?
-If you want to check out `vesta` for yourself, first you will need a recent version of [Rust](https://www.rust-lang.org/) and its package builder `cargo`. 
+If you want to check out `vesta` for yourself, first you will need a recent version of [Rust](https://www.rust-lang.org/) and its package builder `cargo`.
 
 Then you can clone the repo with:
 ```
