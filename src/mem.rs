@@ -22,7 +22,7 @@ impl Mem for Cpu {
             debug!("Memory access out of bounds @ 0x{:X}", loc);
             0
         } else {
-            debug!("Reading mem at {}", loc);
+            debug!("Reading mem short at {}", loc);
             self.mem[loc as usize]
         }
     }
@@ -37,10 +37,11 @@ impl Mem for Cpu {
             debug!("Memory access out of bounds @ 0x{:X} (long)", loc);
             0
         } else {
-            (self.mem[loc.wrapping_add(0) as usize] as u32) >> 0  |
-            (self.mem[loc.wrapping_add(1) as usize] as u32) >> 8  |
-            (self.mem[loc.wrapping_add(2) as usize] as u32) >> 16 |
-            (self.mem[loc.wrapping_add(3) as usize] as u32) >> 24
+            debug!("Reading mem long at {}", loc);
+            (self.mem[loc.wrapping_add(0) as usize] as u32) << 0  |
+            (self.mem[loc.wrapping_add(1) as usize] as u32) << 8  |
+            (self.mem[loc.wrapping_add(2) as usize] as u32) << 16 |
+            (self.mem[loc.wrapping_add(3) as usize] as u32) << 24
         }
     }
 
@@ -66,9 +67,9 @@ impl Mem for Cpu {
             debug!("Memory access out of bounds @ 0x{:X} (long)", loc);
         } else {
             self.mem[loc.wrapping_add(0) as usize] = ((val >> 0) & 0xFF) as u8;
-            self.mem[loc.wrapping_add(0) as usize] = ((val >> 8) & 0xFF) as u8;
-            self.mem[loc.wrapping_add(0) as usize] = ((val >> 16) & 0xFF) as u8;
-            self.mem[loc.wrapping_add(0) as usize] = ((val >> 24) & 0xFF) as u8;
+            self.mem[loc.wrapping_add(1) as usize] = ((val >> 8) & 0xFF) as u8;
+            self.mem[loc.wrapping_add(2) as usize] = ((val >> 16) & 0xFF) as u8;
+            self.mem[loc.wrapping_add(3) as usize] = ((val >> 24) & 0xFF) as u8;
         }
     }
 
@@ -76,6 +77,7 @@ impl Mem for Cpu {
         self.reg[15].wrapping_decrement(4);
         let rs = self.reg[15];
         self.mem_set_long(rs, word);
+        debug!("Pushing {} to {}", word, rs);
     }
 
     fn pop_stack(&mut self) -> u32 {
@@ -83,6 +85,7 @@ impl Mem for Cpu {
         let stk = self.mem_get_long(rs);
         self.reg[15].wrapping_increment(4);
 
+        debug!("Popping {} from {}", stk, rs);
         stk
     }
 }

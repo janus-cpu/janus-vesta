@@ -94,6 +94,24 @@ impl Execute for Cpu {
                     }
                 }
             },
+            RSUB => {
+                if let Some((a, b)) = self.get_ops_long(op1, op2) {
+                    let c = (a as u64).wrapping_sub(b as u64);
+
+                    if self.store_op_long(op2, c as u32) {
+                        self.set_arith_long(a, b, c);
+                    }
+                }
+            },
+            RSUBS => {
+                if let Some((a, b)) = self.get_ops_short(op1, op2) {
+                    let c = (a as u32).wrapping_sub(b as u32);
+
+                    if self.store_op_short(op2, c as u8) {
+                        self.set_arith_short(a, b, c);
+                    }
+                }
+            },
             NOR => {
                 if let Some((a, b)) = self.get_ops_long(op1, op2) {
                     let c = !(a | b);
@@ -351,7 +369,7 @@ impl Execute for Cpu {
                 }
             },
             RET => {
-                self.reg[14] = self.rp;
+                self.rp = self.reg[14];
             },
             HLT => {
                 if self.flag_get(PROTECT_FLAG) {
@@ -362,6 +380,7 @@ impl Execute for Cpu {
             },
             INT => {
                 if let Some(val) = self.get_op_short(op1) {
+                    debug!(">>> Int {}", val);
                     if val < 8 {
                         self.protect_interrupt = true;
                     } else {
@@ -376,7 +395,7 @@ impl Execute for Cpu {
                     self.rp = self.pop_stack();
                     self.rflags = self.pop_stack();
 
-                    if !self.flag_get(PROTECT_FLAG) {
+                    if self.flag_get(PROTECT_FLAG) {
                         self.reg[15] = self.pop_stack();
                     }
 
@@ -536,6 +555,38 @@ impl Execute for Cpu {
                     }
                 }
             },
+            POPR => {
+                let old_rs = self.reg[15];
+
+                for i in 4..15 {
+                    let rs = self.reg[15];
+                    let reg = self.reg[i];
+                    self.mem_set_long(rs, reg);
+
+                    if !self.has_memory_interrupt() {
+                        self.reg[15].wrapping_increment(4);
+                    } else {
+                        self.reg[15] = old_rs;
+                        break;
+                    }
+                }
+            },
+            PUSHR => {
+                let old_rs = self.reg[15];
+
+                for i in (4..15).rev() {
+                    let rs = self.reg[15].wrapping_sub(4);
+                    let reg = self.reg[i];
+                    self.mem_set_long(rs, reg);
+
+                    if !self.has_memory_interrupt() {
+                        self.reg[15] = rs;
+                    } else {
+                        self.reg[15] = old_rs;
+                        break;
+                    }
+                }
+            }
             IN => {},
             INS => {},
             OUT => {
@@ -544,8 +595,8 @@ impl Execute for Cpu {
                 }
             },
             OUTS => {
-                if let Some((port, val)) = self.get_ops_long(op1, op2) {
-                    println!("0x{:X}: {} {}", port, val as u8 as char, val);
+                if let Some((port, val)) = self.get_ops_short(op1, op2) {
+                    println!("0x{:X}: {} {}", port, val as char, val);
                 }
             },
             XCHG => {

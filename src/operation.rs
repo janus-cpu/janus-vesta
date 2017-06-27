@@ -12,6 +12,7 @@ pub enum Operation {
     SUB, SUBS,
     ADC, ADCS,
     SBB, SBBS,
+    RSUB, RSUBS,
     NOR, NORS,
     NAND, NANDS,
     OR, ORS,
@@ -43,6 +44,7 @@ pub enum Operation {
 
     POP, POPS,
     PUSH, PUSHS,
+    PUSHR, POPR,
     IN, INS,
     OUT, OUTS,
     XCHG, XCHGS,
@@ -68,6 +70,8 @@ impl Operation {
             0x05 => ADCS,
             0x06 => SBB,
             0x07 => SBBS,
+            0x08 => RSUB,
+            0x09 => RSUBS,
             0x20 => NOR,
             0x21 => NORS,
 
@@ -142,6 +146,8 @@ impl Operation {
             0xA7 => OUTS,
             0xA8 => XCHG,
             0xA9 => XCHGS,
+            0xAA => POPR,
+            0xAB => PUSHR,
 
             0xB0 => MOVE,
             0xB1 => MOVES,
@@ -177,6 +183,7 @@ impl Operation {
             SUB | SUBS |
             ADC | ADCS |
             SBB | SBBS |
+            RSUB | RSUBS |
             NOR | NORS |
             NAND | NANDS |
             OR | ORS |
@@ -210,6 +217,8 @@ impl Operation {
             POP | POPS => P,
             PUSH | PUSHS => U,
             IN | INS | OUT | OUTS => I,
+
+            POPR | PUSHR => N,
 
             XCHG | XCHGS => X,
         }
@@ -301,13 +310,9 @@ impl OperandParse for Cpu {
                 (o, Operand::None)
             }
             Prototype::T => {
-                let o = self.read_operand();
+                let imm = self.read_operand_const(1);
 
-                if !o.is_const() {
-                    self.instr_interrupt = true;
-                }
-
-                (o, Operand::None)
+                (Operand::Constant(imm), Operand::None)
             }
         }
     }
@@ -523,6 +528,8 @@ impl fmt::Display for Operation {
             &ADCS => write!(f, "ADCS"),
             &SBB => write!(f, "SBB"),
             &SBBS => write!(f, "SBBS"),
+            &RSUB => write!(f, "RSUB"),
+            &RSUBS => write!(f, "RSUBS"),
             &NOR => write!(f, "NOR"),
             &NORS => write!(f, "NORS"),
             &NAND => write!(f, "NAND"),
@@ -580,6 +587,8 @@ impl fmt::Display for Operation {
             &POPS => write!(f, "POPS"),
             &PUSH => write!(f, "PUSH"),
             &PUSHS => write!(f, "PUSHS"),
+            &POPR => write!(f, "POPR"),
+            &PUSHR => write!(f, "PUSHR"),
             &IN => write!(f, "IN"),
             &INS => write!(f, "INS"),
             &OUT => write!(f, "OUT"),

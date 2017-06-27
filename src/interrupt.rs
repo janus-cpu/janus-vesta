@@ -1,5 +1,6 @@
 use cpu::Cpu;
 use mem::Mem;
+use debug::*;
 use flag::*;
 
 pub const MEMORY_INTERRUPT: u8 = 0;
@@ -39,6 +40,7 @@ impl Interrupt for Cpu {
     }
 
     fn trigger_memory_interrupt(&mut self) {
+        debug!("Trigger memory interrupt.");
         let mem_addr = self.mem_interrupt_address.unwrap();
         self.mem_interrupt_address = None;
 
@@ -58,6 +60,7 @@ impl Interrupt for Cpu {
 
     fn trigger_next_interrupt(&mut self) {
         let interrupt = self.interrupt_queue.pop_front().unwrap();
+        debug!("Triggering interrupt {}!", interrupt);
         self.trigger_interrupt(interrupt);
     }
 
