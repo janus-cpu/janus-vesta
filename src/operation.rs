@@ -1,6 +1,5 @@
 use std::fmt;
 
-use debug::*;
 use wrapping_util::WrappingIncrement;
 use cpu::Cpu;
 use mem::Mem;
@@ -225,10 +224,17 @@ impl Operation {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum OffsetType {
+    PositiveRelative,
+    NegativeRelative,
+    AbsoluteNone
+}
+
 #[derive(Debug, Copy, Clone)]
 pub enum Operand {
     None,
-    Constant(u32),
+    Constant(u32, OffsetType),
     Register(u8),
     IndirectConstant(u8, u32),
     IndirectRegister(u8, u8, u8, u32)
@@ -246,7 +252,7 @@ impl Operand {
 
     fn is_const(&self) -> bool {
         match self {
-            &Operand::Constant(_) => true,
+            &Operand::Constant(_, _) => true,
             _ => false
         }
     }
@@ -256,6 +262,7 @@ pub trait OperandParse {
     fn decode_operands(&mut self, operation: Operation) -> (Operand, Operand);
     fn read_operand(&mut self) -> Operand;
     fn read_operand_const(&mut self, sz: u8) -> u32;
+    fn read_offset_ty(&mut self, ty: u8) -> OffsetType;
 }
 
 impl OperandParse for Cpu {
@@ -312,7 +319,7 @@ impl OperandParse for Cpu {
             Prototype::T => {
                 let imm = self.read_operand_const(1);
 
-                (Operand::Constant(imm), Operand::None)
+                (Operand::Constant(imm, OffsetType::AbsoluteNone), Operand::None)
             }
         }
     }
@@ -330,7 +337,8 @@ impl OperandParse for Cpu {
                 // CONSTANT
                 //TODO: introduce variables for these
                 let const_sz = (descriptor >> 2) & 0b11;
-                Operand::Constant(self.read_operand_const(const_sz))
+                let rel_ty = (descriptor >> 4) & 0b11;
+                Operand::Constant(self.read_operand_const(const_sz), self.read_offset_ty(rel_ty))
             } else {
                 // REGISTER
                 let register = (descriptor >> 2) & 0b1111;
@@ -384,6 +392,18 @@ impl OperandParse for Cpu {
             _ => unreachable!()
         }
     }
+
+    fn read_offset_ty(&mut self, ty: u8) -> OffsetType {
+        match ty {
+            0b00 => OffsetType::AbsoluteNone,
+            0b01 => OffsetType::PositiveRelative,
+            0b11 => OffsetType::NegativeRelative,
+            _ => {
+                self.instr_interrupt = true;
+                OffsetType::AbsoluteNone
+            }
+        }
+    }
 }
 
 pub trait OperandCompute {
@@ -399,8 +419,15 @@ impl OperandCompute for Cpu {
     fn get_op_long(&mut self, op: Operand) -> Option<u32> {
         let val = match op {
             Operand::None => unreachable!(),
-            Operand::Constant(c) => c,
             Operand::Register(r) => self.reg[r as usize],
+            Operand::Constant(c, t) => {
+                if t != OffsetType::AbsoluteNone {
+                    self.instr_interrupt = true;
+                    return None;
+                }
+
+                c
+            }
             Operand::IndirectConstant(r, c) => {
                 let addr = self.reg[r as usize].wrapping_add(c);
                 self.mem_get_long(addr)
@@ -432,7 +459,7 @@ impl OperandCompute for Cpu {
     fn store_op_long(&mut self, op: Operand, val: u32) -> bool {
         match op {
             Operand::None => unreachable!(),
-            Operand::Constant(_) => unreachable!(),
+            Operand::Constant(_, _) => unreachable!(),
             Operand::Register(r) => {
                 self.reg[r as usize] = val;
             }
@@ -453,13 +480,14 @@ impl OperandCompute for Cpu {
     fn get_op_short(&mut self, op: Operand) -> Option<u8> {
         let val = match op {
             Operand::None => unreachable!(),
-            Operand::Constant(c) => {
-                if c > 0xFF {
+            Operand::Constant(c, t) => {
+                if c > 0xFF || t != OffsetType::AbsoluteNone {
+                    self.instr_interrupt = true;
                     return None;
                 }
 
                 c as u8
-             },
+            },
             Operand::Register(r) => (self.reg[(r >> 2) as usize] >> (8 * (r & 0b11))) as u8,
             Operand::IndirectConstant(r, c) => {
                 let addr = self.reg[r as usize].wrapping_add(c);
@@ -492,7 +520,7 @@ impl OperandCompute for Cpu {
     fn store_op_short(&mut self, op: Operand, val: u8) -> bool {
         match op {
             Operand::None => unreachable!(),
-            Operand::Constant(_) => unreachable!(),
+            Operand::Constant(_, _) => unreachable!(),
             Operand::Register(r) => {
                 let reg = r >> 2;
                 let sel = r & 0b11;
@@ -619,11 +647,21 @@ impl fmt::Display for Operation {
     }
 }
 
+impl fmt::Display for OffsetType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &OffsetType::PositiveRelative => write!(f, "+"),
+            &OffsetType::NegativeRelative => write!(f, "-"),
+            &OffsetType::AbsoluteNone => Ok(())
+        }
+    }
+}
+
 impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             &Operand::None => Ok(()),
-            &Operand::Constant(c) => write!(f, "const {}", c),
+            &Operand::Constant(c, t) => write!(f, "const {}{}", t, c),
             &Operand::Register(r) => write!(f, "r{}", r),
             &Operand::IndirectConstant(r, c) => write!(f, "[r{} + {}]", r, c),
             &Operand::IndirectRegister(b, o, s, c) => write!(f, "[r{} + {} * r{} + {}]", b, 1 << s, o, c),

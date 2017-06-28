@@ -1,6 +1,5 @@
 use cpu::Cpu;
 use mem::Mem;
-use debug::*;
 use flag::*;
 
 pub const MEMORY_INTERRUPT: u8 = 0;

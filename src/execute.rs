@@ -1,14 +1,14 @@
-use debug::*;
 use wrapping_util::WrappingIncrement;
 
 use cpu::Cpu;
 use mem::Mem;
-use operation::{Operation, Operand, OperandCompute};
+use operation::{Operation, Operand, OperandCompute, OffsetType};
 use flag::*;
 use interrupt::*;
 
 pub trait Execute {
     fn execute_operation(&mut self, operation: Operation, op1: Operand, op2: Operand);
+    fn get_rp_after_jmp(&mut self, op: Operand) -> Option<u32>;
 }
 
 impl Execute for Cpu {
@@ -284,12 +284,12 @@ impl Execute for Cpu {
                 }
             },
             JMP => {
-                if let Some(val) = self.get_op_long(op1) {
+                if let Some(val) = self.get_rp_after_jmp(op1) {
                     self.rp = val;
                 }
             },
             JE => {
-                if let Some(val) = self.get_op_long(op1) {
+                if let Some(val) = self.get_rp_after_jmp(op1) {
                     if self.flag_get(ZERO_FLAG) {
                         debug!("Jumped to {}", val);
                         self.rp = val;
@@ -297,7 +297,7 @@ impl Execute for Cpu {
                 }
             },
             JNE => {
-                if let Some(val) = self.get_op_long(op1) {
+                if let Some(val) = self.get_rp_after_jmp(op1) {
                     if !self.flag_get(ZERO_FLAG) {
                         debug!("Jumped to {}", val);
                         self.rp = val;
@@ -305,14 +305,14 @@ impl Execute for Cpu {
                 }
             },
             JL => {
-                if let Some(val) = self.get_op_long(op1) {
+                if let Some(val) = self.get_rp_after_jmp(op1) {
                     if self.flag_get(NEGATIVE_FLAG) ^ self.flag_get(OVERFLOW_FLAG) {
                         self.rp = val;
                     }
                 }
             },
             JLE => {
-                if let Some(val) = self.get_op_long(op1) {
+                if let Some(val) = self.get_rp_after_jmp(op1) {
                     if (self.flag_get(NEGATIVE_FLAG) ^ self.flag_get(OVERFLOW_FLAG))
                             || self.flag_get(ZERO_FLAG) {
                         self.rp = val;
@@ -320,7 +320,7 @@ impl Execute for Cpu {
                 }
             },
             JG => {
-                if let Some(val) = self.get_op_long(op1) {
+                if let Some(val) = self.get_rp_after_jmp(op1) {
                     if !(self.flag_get(NEGATIVE_FLAG) ^ self.flag_get(OVERFLOW_FLAG))
                             && !self.flag_get(ZERO_FLAG) {
                         self.rp = val;
@@ -328,42 +328,42 @@ impl Execute for Cpu {
                 }
             },
             JGE => {
-                if let Some(val) = self.get_op_long(op1) {
+                if let Some(val) = self.get_rp_after_jmp(op1) {
                     if !(self.flag_get(NEGATIVE_FLAG) ^ self.flag_get(OVERFLOW_FLAG)) {
                         self.rp = val;
                     }
                 }
             },
             JLU => {
-                if let Some(val) = self.get_op_long(op1) {
+                if let Some(val) = self.get_rp_after_jmp(op1) {
                     if self.flag_get(CARRY_FLAG) {
                         self.rp = val;
                     }
                 }
             },
             JLEU => {
-                if let Some(val) = self.get_op_long(op1) {
+                if let Some(val) = self.get_rp_after_jmp(op1) {
                     if self.flag_get(CARRY_FLAG) || self.flag_get(ZERO_FLAG) {
                         self.rp = val;
                     }
                 }
             },
             JGU => {
-                if let Some(val) = self.get_op_long(op1) {
+                if let Some(val) = self.get_rp_after_jmp(op1) {
                     if !self.flag_get(CARRY_FLAG) && !self.flag_get(ZERO_FLAG) {
                         self.rp = val;
                     }
                 }
             },
             JGEU => {
-                if let Some(val) = self.get_op_long(op1) {
+                if let Some(val) = self.get_rp_after_jmp(op1) {
                     if !self.flag_get(CARRY_FLAG) {
                         self.rp = val;
                     }
                 }
             },
             CALL => {
-                if let Some(val) = self.get_op_long(op1) {
+                if let Some(val) = self.get_rp_after_jmp(op1) {
                     self.reg[14] = self.rp;
                     self.rp = val;
                 }
@@ -400,7 +400,7 @@ impl Execute for Cpu {
                     }
 
                     if self.has_memory_interrupt() {
-                        fatal!("Fault while returning from interrupt.");
+                        error!("Fault while returning from interrupt.");
                     }
                 }
             },
@@ -759,6 +759,18 @@ impl Execute for Cpu {
                     }
                 }
             }
+        }
+    }
+
+    fn get_rp_after_jmp(&mut self, op: Operand) -> Option<u32> {
+        if let Operand::Constant(c, t) = op {
+            Some(match t {
+                OffsetType::PositiveRelative => self.rp.wrapping_add(c),
+                OffsetType::NegativeRelative => self.rp.wrapping_sub(c),
+                OffsetType::AbsoluteNone => c
+            })
+        } else {
+            self.get_op_long(op)
         }
     }
 }

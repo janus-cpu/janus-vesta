@@ -1,4 +1,3 @@
-use debug::*;
 use wrapping_util::WrappingIncrement;
 use cpu::Cpu;
 

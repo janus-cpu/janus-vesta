@@ -1,25 +1,9 @@
-pub static mut DEBUGGING: bool = false;
-
-macro_rules! debug {
-    ($($arg:tt)*) => (
-        {
-            use std::io::prelude::*;
-            if unsafe { DEBUGGING } {
-                write!(&mut ::std::io::stderr(), "[vesta] {}\n", format_args!($($arg)*)).unwrap();
-            }
-        }
-    )
-}
-
 macro_rules! fatal {
-    ($($arg:tt)*) => (
-        {
-            use std::io::prelude::*;
-            use std::process::exit;
-            write!(&mut ::std::io::stderr(), "[FATAL] {}\n", format_args!($($arg)*)).unwrap();
-            exit(1);
-        }
-    )
+    ($($arg:tt)*) => ({
+        use std::process::exit;
+        error!($($arg)*);
+        exit(1);
+    })
 }
 
 pub trait UnwrapOrDie<T> {

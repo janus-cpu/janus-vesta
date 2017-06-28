@@ -1,6 +1,12 @@
 extern crate getopts;
 use getopts::Options;
 
+extern crate simplelog;
+use simplelog::{TermLogger, Config, LogLevelFilter};
+
+#[macro_use]
+extern crate log;
+
 #[macro_use]
 mod debug;
 use debug::*;
@@ -37,13 +43,22 @@ fn main() {
         Err(f) => { panic!(f.to_string()) }
     };
 
-    if matches.opt_present("h") {
-        print_usage(opts);
+    if matches.opt_present("D") {
+        TermLogger::init(LogLevelFilter::Debug, Config::default()).unwrap();
+        debug!("Debugging is enabled!");
+    } else {
+        let config = Config {
+            time: None,
+            level: None,
+            target: None,
+            location: None
+        };
+
+        TermLogger::init(LogLevelFilter::Info, config).unwrap();
     }
 
-    if matches.opt_present("D") {
-        unsafe { DEBUGGING = true; }
-        debug!("Debugging is enabled!");
+    if matches.opt_present("h") {
+        print_usage(opts);
     }
 
     //TODO: put this default somewhere nice.

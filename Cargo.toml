@@ -9,3 +9,5 @@ name = "vesta"
 
 [dependencies]
 getopts = "0.2"
+log = "*"
+simplelog = "*"

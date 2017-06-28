@@ -1,4 +1,3 @@
-use debug::*;
 use cpu::Cpu;
 
 pub const CARRY_FLAG: u32 = 0b1;
